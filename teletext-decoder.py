@@ -443,8 +443,8 @@ def main():
 
 	while fileoffset < len(filedata):
 		dumpdata += filedata[fileoffset:fileoffset + 0x2A] # copy 42 bytes
-		fileoffset+=0x2B # move on 43 bytes
-		#fileoffset+=0x2A # move on 42 bytes
+		#fileoffset+=0x2B # move on 43 bytes
+		fileoffset+=0x2A # move on 42 bytes
 	
 	currentpageinmagazine = 0xFF # no page
 
