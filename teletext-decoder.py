@@ -421,7 +421,7 @@ def main():
 				sys.exit(2)
 
 	if (inputfile == '' or outputfile == ''):
-		print('decode.py -i <inputfile> -o <outputfile> [-p <page number>]')
+		print('teletext-decoder.py -i <inputfile> -o <outputfile> [-p <page number>]')
 		sys.exit()
 	
 	if (pageopt != 0x8FF):
