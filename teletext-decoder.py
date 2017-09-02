@@ -334,9 +334,17 @@ def display_broadcast_service_data( decoded_data ):
 		minutes = ((((decoded_data[16] >> 4) & 0xF) - 1) * 10) + ((decoded_data[16] & 0xF) - 1)
 		seconds = ((((decoded_data[17] >> 4) & 0xF) - 1) * 10) + ((decoded_data[17] & 0xF) - 1)
 		d = date.fromordinal(mjd + date(1858, 11, 17).toordinal())
-		t = time(hours,minutes,seconds, tzinfo=tz)
-		dt = datetime.combine(d,t)
-		outfile.write("Initial Teletext Page: {:03X}/{:04X}\nNetwork Identification Code: {:04X}\nTimestamp: {}\nReserved Bytes:".format(imag*0x100+ipage, isub, ni, dt.isoformat()))
+		outfile.write("Initial Teletext Page: {:03X}/{:04X}\nNetwork Identification Code: {:04X}\n".format(imag*0x100+ipage, isub, ni))
+		try:
+			t = time(hours,minutes,seconds, tzinfo=tz)
+			dt = datetime.combine(d,t)
+			outfile.write("Timestamp: {}\n".format(dt.isoformat()))
+		except (ValueError):
+			outfile.write("Invalid time/date bytes:")
+			for i in range (11,18):
+				outfile.write (" 0x{:02x}".format(decoded_data[i]))
+			outfile.write("\n")
+		outfile.write("Reserved Bytes:")
 		for i in range (18,22):
 			outfile.write (" 0x{:02x}".format(decoded_data[i]))
 	elif (decoded_data[2] == 2 or decoded_data[2] == 3):
