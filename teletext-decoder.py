@@ -405,13 +405,20 @@ def display_independent_data_service( decoded_data ):
 		outfile.write (" 0x{:02x}".format(decoded_data[i]))
 	outfile.write("\n\n")
 
+helpstring ="""usage: teletext-decoder.py -i <inputfile> -o <outputfile> [-p <page number>] [-s]
+ 
+optional arguments:
+ -p   output only packets belonging to page
+ -s   input file uses 43 byte packet size (for WST TV card dumps)"""
+
 def main():
 	inputfile = ''
 	outputfile = ''
 	pageopt = 0x8FF
+	offsetstep = 42;
 
 	try:
-		opts, args = getopt.getopt(sys.argv[1:],"i:o:p:")
+		opts, args = getopt.getopt(sys.argv[1:],"i:o:p:s")
 	except getopt.GetoptError as err:
 		print(err)
 		sys.exit(2)
@@ -427,9 +434,11 @@ def main():
 			except:
 				print("invalid page number")
 				sys.exit(2)
+		elif opt in ('-s'):
+			offsetstep = 43;
 
 	if (inputfile == '' or outputfile == ''):
-		print('teletext-decoder.py -i <inputfile> -o <outputfile> [-p <page number>]')
+		print(helpstring)
 		sys.exit()
 	
 	if (pageopt != 0x8FF):
@@ -451,8 +460,7 @@ def main():
 
 	while fileoffset < len(filedata):
 		dumpdata += filedata[fileoffset:fileoffset + 0x2A] # copy 42 bytes
-		#fileoffset+=0x2B # move on 43 bytes
-		fileoffset+=0x2A # move on 42 bytes
+		fileoffset+=offsetstep
 	
 	currentpageinmagazine = 0xFF # no page
 
