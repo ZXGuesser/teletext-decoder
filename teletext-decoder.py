@@ -4,6 +4,13 @@
 import sys, getopt
 from datetime import date, datetime, time, timedelta, tzinfo
 
+try:
+	import crcmod
+except ImportError:
+	print ("Requires python module 'crcmod'. Try 'pip install crcmod'")
+	sys.exit(2)
+
+
 class FixedOffset(tzinfo):
 	"""Fixed offset in minutes east from UTC."""
 	def __init__(self, offset, name):
@@ -398,27 +405,98 @@ def display_broadcast_service_data( decoded_data ):
 	
 	outfile.write("\nStatusDisplay: {}\n\n".format(decoded_data[22]));
 
-def display_independent_data_service( decoded_data ):
-	outfile.write("Magazine: {}\n" .format(decoded_data[0]))
-	outfile.write("Packet {}: Independent data service packets not implemented yet\npacket data:" .format(decoded_data[1]))
-	for i in range (2,42):
-		outfile.write (" 0x{:02x}".format(decoded_data[i]))
-	outfile.write("\n\n")
+idl_a_crc = crcmod.mkCrcFun(0x10291, initCrc=0, rev=True)
 
-helpstring ="""usage: teletext-decoder.py -i <inputfile> -o <outputfile> [-p <page number>] [-s]
+def display_independent_data_service( decoded_data ):
+	outfile.write("Data Channel: {}.".format((decoded_data[0]%8) + ((decoded_data[1]&1)<<3)))
+	FT = hamming_8_4_decode(decoded_data[2])[0]
+	
+	if (FT & 1 == 0):
+		outfile.write(" Format A\n")
+		DL = 36
+		
+		IAL = hamming_8_4_decode(decoded_data[3])[0]
+		if IAL & 7 == 7:
+			outfile.write("invalid Interpretation and Address Length (IAL)\n")
+			pass
+		if IAL & 7:
+			SPA = 0
+			for i in range (0,IAL):
+				SPA += hamming_8_4_decode(decoded_data[4+i])[0] << (4 * i)
+			outfile.write("Service Packet Address (SPA): 0x{:x}\n".format(SPA))
+			DL -= IAL&7
+		
+		nextbyte = 4+(IAL&7)
+		if FT & 2:
+			#repeat facility
+			RI = decoded_data[nextbyte]
+			outfile.write("Repeat Indicator (RI): 0x{:02x}\n".format(RI))
+			nextbyte += 1
+			DL -= 1
+			
+		payload = bytearray()
+		
+		if FT & 4:
+			#explicit continuity indicator
+			CI = decoded_data[nextbyte]
+			outfile.write("Explicit Continuity Indicator (CI): 0x{:02x}\n".format(CI))
+			payload.append(CI)
+			nextbyte += 1
+			DL -= 1
+		
+		if FT & 8:
+			#data length
+			if (decoded_data[nextbyte] > DL) or (decoded_data[nextbyte] & 0xC0):
+				outfile.write("invalid data length (DL)\n")
+				pass
+			else:
+				DL = decoded_data[nextbyte]
+				outfile.write("Data Length (DL): {} bytes\n".format(DL))
+				payload.append(DL)
+				nextbyte += 1
+		
+		outfile.write("User Data:")
+		for i in range (nextbyte,42):
+			if (i < nextbyte + DL):
+				outfile.write(" {:02x}".format(decoded_data[i]))
+			payload.append(decoded_data[i])
+		outfile.write("\n")
+		
+		crc = idl_a_crc(payload)
+		
+		if (FT & 4):
+			if (crc != 0):
+				outfile.write("CRC error\n")
+		else:
+			if (crc >> 8) & 0xff == (crc & 0xff):
+				outfile.write("Implicit Continuity Indicator (CI): 0x{:02x}\n".format(crc & 0xff))
+			else:
+				outfile.write("CRC error\n")
+		
+	elif (FT & 2 == 0):
+		outfile.write(" Format B\n")
+		outfile.write("Application number: {}\n".format((FT >> 2) & 3))
+		outfile.write("Format B decoding not implemented yet\n")
+	else:
+		outfile.write("\ninvalid Format Type (FT)\n")
+	outfile.write("\n")
+
+helpstring ="""usage: teletext-decoder.py -i <inputfile> -o <outputfile> [-p <page number>] [-d] [-s]
  
 optional arguments:
  -p   output only packets belonging to page
+ -d   output only independent data packets
  -s   input file uses 43 byte packet size (for WST TV card dumps)"""
 
 def main():
 	inputfile = ''
 	outputfile = ''
 	pageopt = 0x8FF
-	offsetstep = 42;
+	offsetstep = 42
+	IDL = False;
 
 	try:
-		opts, args = getopt.getopt(sys.argv[1:],"i:o:p:s")
+		opts, args = getopt.getopt(sys.argv[1:],"i:o:p:ds")
 	except getopt.GetoptError as err:
 		print(err)
 		sys.exit(2)
@@ -436,6 +514,8 @@ def main():
 				sys.exit(2)
 		elif opt in ('-s'):
 			offsetstep = 43;
+		elif opt in ('-d'):
+			IDL = True;
 
 	if (inputfile == '' or outputfile == ''):
 		print(helpstring)
@@ -444,6 +524,9 @@ def main():
 	if (pageopt != 0x8FF):
 		if (pageopt < 0x100 or pageopt > 0x8FF):
 			print("invalid page number")
+			sys.exit(2)
+		if IDL:
+			print("-p and -d options cannot be used at the same time")
 			sys.exit(2)
 		pagetofind = pageopt & 0xFF
 		magazinetofind = (pageopt & 0xF00) >> 8
@@ -520,34 +603,35 @@ def main():
 							display_page_enhancement_data( decoded_data )
 			
 			if not findpage: # code to display any packet
-				if decoded_data[1] == 0: # header packet
-					display_header_data( decoded_data )
-				
-				elif decoded_data[1] < 26: # page row
-					if (magCodings[decoded_data[0]%8] == 0):
-						display_page_data( decoded_data )
-					elif (magCodings[decoded_data[0]%8] == 2):
+				if not IDL:
+					if decoded_data[1] == 0: # header packet
+						display_header_data( decoded_data )
+					
+					elif decoded_data[1] < 26: # page row
+						if (magCodings[decoded_data[0]%8] == 0):
+							display_page_data( decoded_data )
+						elif (magCodings[decoded_data[0]%8] == 2):
+							display_page_enhancement_data( decoded_data )
+					
+					elif decoded_data[1] == 26: # page enhancement data:
+						display_page_enhancement_data_26( decoded_data )
+					
+					elif decoded_data[1] == 27: # link packet
+						display_link_data( decoded_data )
+					
+					elif decoded_data[1] == 28: # page enhancement data
 						display_page_enhancement_data( decoded_data )
+					
+					elif decoded_data[1] == 29: # page enhancement data
+						display_page_enhancement_data( decoded_data )
+					
+					elif decoded_data[1] == 30: 
+						if decoded_data[0] == 8: # Broadcast service data packets
+							display_broadcast_service_data( decoded_data )
+						else: # Independent data services
+							display_independent_data_service( decoded_data )
 				
-				elif decoded_data[1] == 26: # page enhancement data:
-					display_page_enhancement_data_26( decoded_data )
-				
-				elif decoded_data[1] == 27: # link packet
-					display_link_data( decoded_data )
-				
-				elif decoded_data[1] == 28: # page enhancement data
-					display_page_enhancement_data( decoded_data )
-				
-				elif decoded_data[1] == 29: # page enhancement data
-					display_page_enhancement_data( decoded_data )
-				
-				elif decoded_data[1] == 30: 
-					if decoded_data[0] == 8: # Broadcast service data packets
-						display_broadcast_service_data( decoded_data )
-					else: # Independent data services
-						display_independent_data_service( decoded_data )
-				
-				elif decoded_data[1] == 31: # Independent data services
+				if decoded_data[1] == 31: # Independent data services
 					display_independent_data_service( decoded_data )
 
 		offset += 42
