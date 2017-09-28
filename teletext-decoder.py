@@ -598,9 +598,6 @@ def main():
 						
 						elif decoded_data[1] == 28: # page enhancement data
 							display_page_enhancement_data( decoded_data )
-						
-						elif decoded_data[1] == 29: # page enhancement data
-							display_page_enhancement_data( decoded_data )
 			
 			if not findpage: # code to display any packet
 				if not IDL:
