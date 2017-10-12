@@ -408,7 +408,8 @@ def display_broadcast_service_data( decoded_data ):
 idl_a_crc = crcmod.mkCrcFun(0x10291, initCrc=0, rev=True)
 
 def display_independent_data_service( decoded_data ):
-	outfile.write("Data Channel: {}.".format((decoded_data[0]%8) + ((decoded_data[1]&1)<<3)))
+	datachannel = (decoded_data[0]%8) + ((decoded_data[1]&1)<<3)
+	outfile.write("Data Channel: {}.".format(datachannel))
 	FT = hamming_8_4_decode(decoded_data[2])[0]
 	
 	if (FT & 1 == 0):
@@ -456,11 +457,17 @@ def display_independent_data_service( decoded_data ):
 				nextbyte += 1
 		
 		outfile.write("User Data:")
+		datastring = ""
 		for i in range (nextbyte,42):
 			if (i < nextbyte + DL):
 				outfile.write(" {:02x}".format(decoded_data[i]))
+				if (decoded_data[i] > 0x1F and decoded_data[i] < 0x80 ):
+					datastring += chr(decoded_data[i])
+				else:
+					datastring += "."
 			payload.append(decoded_data[i])
 		outfile.write("\n")
+		outfile.write("ASCII: {}\n".format(datastring))
 		
 		crc = idl_a_crc(payload)
 		
@@ -476,7 +483,16 @@ def display_independent_data_service( decoded_data ):
 	elif (FT & 2 == 0):
 		outfile.write(" Format B\n")
 		outfile.write("Application number: {}\n".format((FT >> 2) & 3))
-		outfile.write("Format B decoding not implemented yet\n")
+		outfile.write("Application identifier: 0x{:x}\n".format(hamming_8_4_decode(decoded_data[3])[0]))
+		outfile.write("Continuity Index (CI): 0x{:x}\n".format(hamming_8_4_decode(decoded_data[4])[0]))
+		
+		outfile.write("User Data:")
+		datastring = ""
+		for i in range (5,40):
+			outfile.write(" {:02x}".format(decoded_data[i]))
+			datastring += chr(decoded_data[i])
+		outfile.write("\n")
+		outfile.write("Forward Error Correction bytes (FEC): 0x{:02x} 0x{:02x}\n".format(decoded_data[40], decoded_data[41]))
 	else:
 		outfile.write("\ninvalid Format Type (FT)\n")
 	outfile.write("\n")
