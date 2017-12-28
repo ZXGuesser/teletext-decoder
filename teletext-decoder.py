@@ -163,11 +163,14 @@ def decode_teletext_line( bytes ):
 				characterbytes += chr( bytes[i] & 0x7F ) #strip parity and add to string
 			
 			decoded_data.append(characterbytes) # page row data
-		else:
+		elif (magCodings[magazine%8] == 2):
 			# page enhancement packet
 			decoded_data.append(hamming_8_4_decode(bytes[2])) #designation code
 			for i in range(0,13): # 13 triplets
 				decoded_data.append(hamming_24_18_decode(bytes[i*3+3], bytes[i*3+4], bytes[i*3+5]))
+		elif (magCodings[magazine%8] == 3):
+			for i in range(2,42):
+				decoded_data.append(hamming_8_4_decode(bytes[i]));
 		
 	elif packet == 26:
 		# page enhancement packet
@@ -263,6 +266,17 @@ def display_page_data( decoded_data ):
 	outfile.write("Magazine: {}\n" .format(decoded_data[0]))
 	outfile.write("Row {}: {}\n\n".format(decoded_data[1], decoded_data[2] ))
 
+def display_hamming_8_4_data( decoded_data ):
+	outfile.write("Magazine: {}\n" .format(decoded_data[0]))
+	outfile.write("Packet {}: all bytes coded Hamming 8/4" .format(decoded_data[1]))
+	outfile.write("\ndecoded: ")
+	for i in range (2,42):
+		outfile.write("{:x} " .format(decoded_data[i][0]))
+	outfile.write("\n errors: ")
+	for i in range (2,42):
+		outfile.write("{:x} " .format(decoded_data[i][1]))
+	outfile.write("\n\n")
+	
 def display_page_enhancement_data_26( decoded_data ):
 	outfile.write("Magazine: {}\n" .format(decoded_data[0]))
 	outfile.write("Packet {}: Page enhancement data packets. Designation code {} (error {})\n" .format(decoded_data[1],decoded_data[2][0],decoded_data[2][1]))
@@ -605,6 +619,8 @@ def main():
 										display_page_enhancement_data_26( decoded_data )
 								else:
 									display_page_enhancement_data( decoded_data )
+							elif (coding == 3):
+								display_hamming_8_4_data( decoded_data )
 						
 						elif decoded_data[1] == 26: # page enhancement data:
 							display_page_enhancement_data_26( decoded_data )
