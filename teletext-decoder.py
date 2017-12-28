@@ -123,7 +123,8 @@ def decode_teletext_line( bytes ):
 	if packet == 0:
 		# page header
 		# return magazine, packet, page number, minutes units, minutes tens, hours units, hours tens, control bits, header characters
-		decoded_data.append((hamming_8_4_decode(bytes[3])[0] << 4) | hamming_8_4_decode(bytes[2])[0]) # page number
+		page = (hamming_8_4_decode(bytes[3])[0] << 4) | hamming_8_4_decode(bytes[2])[0]
+		decoded_data.append(page) # page number
 		
 		subpage = hamming_8_4_decode(bytes[4])[0] # minutes units
 		
@@ -152,8 +153,12 @@ def decode_teletext_line( bytes ):
 		
 		decoded_data.append(header)
 		
-		magFunctions[magazine%8] = 0 # default page function
-		magCodings[magazine%8] = 0 # default page coding
+		if (page == 0xFE):
+			magFunctions[magazine%8] = 6 # MOT
+			magCodings[magazine%8] = 3 
+		else:
+			magFunctions[magazine%8] = 0 # default page function
+			magCodings[magazine%8] = 0 # default page coding
 		
 	elif packet < 26:
 		# page row or replacement header row
@@ -605,10 +610,8 @@ def main():
 						if decoded_data[1] < 26: # page row
 							coding = magCodings[decoded_data[0]%8]
 							function = magFunctions[decoded_data[0]%8]
-							
 							if (coding == 0):
 								display_page_data( decoded_data )
-							
 							elif (coding == 2):
 								if (function == 2 or function == 3):
 									if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
@@ -637,10 +640,22 @@ def main():
 						display_header_data( decoded_data )
 					
 					elif decoded_data[1] < 26: # page row
-						if (magCodings[decoded_data[0]%8] == 0):
+						coding = magCodings[decoded_data[0]%8]
+						function = magFunctions[decoded_data[0]%8]
+						if (coding == 0):
 							display_page_data( decoded_data )
-						elif (magCodings[decoded_data[0]%8] == 2):
-							display_page_enhancement_data( decoded_data )
+						elif (coding == 2):
+							if (function == 2 or function == 3):
+								if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
+									# pointer data
+									display_page_enhancement_data( decoded_data )
+								else:
+									# object definition data
+									display_page_enhancement_data_26( decoded_data )
+							else:
+								display_page_enhancement_data( decoded_data )
+						elif (coding == 3):
+							display_hamming_8_4_data( decoded_data )
 					
 					elif decoded_data[1] == 26: # page enhancement data:
 						display_page_enhancement_data_26( decoded_data )
