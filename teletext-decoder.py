@@ -184,20 +184,23 @@ def decode_teletext_line( bytes ):
 			decoded_data.append(hamming_24_18_decode(bytes[i*3+3], bytes[i*3+4], bytes[i*3+5]))
 		
 	elif packet == 27:
-		# navigation links
-		# return magazine, packet, links page, page, subpage, page, subpage, page, subpage, page, subpage, page, subpage, checksum, link control
-		linksdata = []
+		dc = hamming_8_4_decode(bytes[2])
 		decoded_data.append(hamming_8_4_decode(bytes[2])[0])
-		for i in range(3,40):
-			linksdata.append(hamming_8_4_decode(bytes[i])[0])
-		for i in range(0,6):
-			decoded_data.append(linksdata[i*6]+linksdata[(i*6)+1]*16) # page byte
-			
-			decoded_data.append(linksdata[(i*6)+2]+linksdata[(i*6)+3]*16+linksdata[(i*6)+4]*256+linksdata[(i*6)+5]*4096) # sub page word
 		
-		decoded_data.append(bytes[40] * 0x100 + bytes[41]) # page crc checksum
-		
-		decoded_data.append(linksdata[36]) # link control byte
+		if (dc[0] < 4):
+			# editorial links
+			# return magazine, packet, links page, page, subpage, page, subpage, page, subpage, page, subpage, page, subpage, checksum, link control
+			linksdata = []
+			for i in range(3,40):
+				linksdata.append(hamming_8_4_decode(bytes[i])[0])
+			for i in range(0,6):
+				decoded_data.append(linksdata[i*6]+linksdata[(i*6)+1]*16) # page byte
+				decoded_data.append(linksdata[(i*6)+2]+linksdata[(i*6)+3]*16+linksdata[(i*6)+4]*256+linksdata[(i*6)+5]*4096) # sub page word
+			decoded_data.append(linksdata[36]) # link control byte
+			decoded_data.append(bytes[40] * 0x100 + bytes[41]) # page crc checksum
+		else:
+			for i in range(0,13): # 13 triplets
+				decoded_data.append(hamming_24_18_decode(bytes[i*3+3], bytes[i*3+4], bytes[i*3+5]))
 		
 	elif packet == 28:
 		# page enhancement packet
@@ -303,22 +306,34 @@ def display_page_enhancement_data( decoded_data ):
 
 def display_link_data( decoded_data ):
 	outfile.write("Magazine: {}\n".format(decoded_data[0]))
-	outfile.write("designation code: {}\n".format(decoded_data[2]))
-	if decoded_data[2] == 0:
+	dc = decoded_data[2]
+	outfile.write("Packet {}: Designation code {}\n" .format(decoded_data[1],dc))
+	if (dc < 4):
+		if (dc == 0):
+			l1 = "Red:   "
+			l2 = "Green: "
+			l3 = "Yellow:"
+			l4 = "Blue:  "
+			l6 = "Index: "
+		else:
+			l1 = "Link 0:"
+			l2 = "Link 1:"
+			l3 = "Link 2:"
+			l4 = "Link 3:"
+			l6 = "Link 5:"
 		for i in range(0,6):
 			if i == 0:
-				link = "Red:   "
+				link = l1
 			elif i == 1:
-				link = "Green: "
+				link = l2
 			elif i == 2:
-				link = "Yellow:"
+				link = l3
 			elif i == 3:
-				link = "Blue:  "
+				link = l4
 			elif i == 4:
 				link = "Link 4:"
 			else:
-				link = "Index: "
-			
+				link = l6
 			magazinenumber = decoded_data[0] ^ (get_bit(decoded_data[4+(2*i)], 15) << 2 | get_bit(decoded_data[4+(2*i)], 14) << 1 | get_bit(decoded_data[4+(2*i)], 7))
 			if magazinenumber == 0:
 				magazinenumber = 8
@@ -329,14 +344,45 @@ def display_link_data( decoded_data ):
 			if decoded_data[4+(2*i)] == 0xFF:
 				linkpage = "unused"
 			outfile.write("{0} page-byte = 0x{1:02X}  sub-page-word = 0x{2:04X}  page/subpage = {3}/{4}\n".format(link, decoded_data[3+(2*i)], decoded_data[4+(2*i)], linkpage, linksubpage))
-		outfile.write("Page CRC checksum: 0x{:04X}\n".format(decoded_data[15]))
-		outfile.write("Link control byte = {}".format(decoded_data[16]))
-		if decoded_data[16] & 3:
-			outfile.write("  Display row 24\n\n") # bit 3 set
+		if (dc == 0):
+			outfile.write("Link control: 0x{:X}\n".format(decoded_data[15]))
+			outfile.write("Page CRC checksum: 0x{:04X}\n".format(decoded_data[16]))
+		outfile.write("\n")
+	elif (dc < 6):
+		if (dc == 4):
+			numlinks = 6
 		else:
-			outfile.write("  Do not display row 24\n\n") # bit 3 clear
+			numlinks = 2
+		for i in range(0,numlinks):
+			outfile.write("Link {}: ".format(i))
+			t1 = decoded_data[(i*2)+3]
+			t2 = decoded_data[(i*2)+4]
+			if (t1[0] & 3 == 0):
+				outfile.write("GPOP  ")
+			elif (t1[0] & 3 == 1):
+				outfile.write("POP   ")
+			elif (t1[0] & 3 == 2):
+				outfile.write("GDRCS ")
+			elif (t1[0] & 3 == 3):
+				outfile.write("DRCS  ")
+			if ((t1[0] >> 2) & 3 == 0):
+				outfile.write("invalid")
+			elif ((t1[0] >> 2) & 3 == 1):
+				outfile.write("at L2.5")
+			elif ((t1[0] >> 2) & 3 == 2):
+				outfile.write("at L3.5")
+			elif ((t1[0] >> 2) & 3 == 3):
+				outfile.write("2.5/3.5")
+			units = (t1[0] >> 6) & 0xF
+			tens = (t1[0] >> 14) & 0xF
+			mag = ((t1[0] >> 11) & 7) ^ (decoded_data[0] & 7)
+			if (mag == 0):
+				mag = 8
+			outfile.write(" Page: {:X}".format((mag << 8)|(tens << 4)|units))
+			outfile.write (" Subcode flags: {:016b}\n".format((t2[0] >> 2) & 0xFFFF))
+		outfile.write("\n")
 	else:
-		outfile.write("only designation code 0 implemented\n\n")
+		outfile.write("Designation code {} not implemented/n/n")
 
 def display_broadcast_service_data( decoded_data ):
 	outfile.write("Magazine: {}\n" .format(decoded_data[0]))
