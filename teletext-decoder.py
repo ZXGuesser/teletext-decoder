@@ -263,8 +263,9 @@ def display_header_data( decoded_data ):
 		controlstring += " Inhibit Display,"
 	if decoded_data[4] & 0x800:
 		controlstring += " Magazine Serial,"
-		
-	controlstring += " National character set {}\n".format(decoded_data[4] >> 12)
+	
+	NOSbits = decoded_data[4] >> 12
+	controlstring += " National character set {}\n".format(((NOSbits & 4) >> 2) | (NOSbits & 2) | ((NOSbits & 1) << 2))
 
 	outfile.write(controlstring)
 	
