@@ -634,7 +634,7 @@ def main():
 	global outfile # make outfile variable global
 	outfile = open(outputfile, 'w')
 
-	while offset < len(dumpdata) - 42:
+	while offset <= len(dumpdata) - 42:
 		rowbytes = dumpdata[ (offset) : offset + 42 ] #slice dumpdata list into data for one line
 		
 		#print("line {}".format(offset / 42))
