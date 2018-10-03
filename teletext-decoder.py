@@ -576,9 +576,10 @@ def main():
 	pageopt = 0x8FF
 	offsetstep = 42
 	IDL = False;
+	t42 = False;
 
 	try:
-		opts, args = getopt.getopt(sys.argv[1:],"i:o:p:ds")
+		opts, args = getopt.getopt(sys.argv[1:],"i:o:p:dst")
 	except getopt.GetoptError as err:
 		print(err)
 		sys.exit(2)
@@ -598,6 +599,8 @@ def main():
 			offsetstep = 43;
 		elif opt in ('-d'):
 			IDL = True;
+		elif opt in ('-t'):
+			t42 = True;
 
 	if (inputfile == '' or outputfile == ''):
 		print(helpstring)
@@ -632,7 +635,10 @@ def main():
 	offset = 0
 
 	global outfile # make outfile variable global
-	outfile = open(outputfile, 'w')
+	if (t42):
+		outfile = open(outputfile, 'wb')
+	else:
+		outfile = open(outputfile, 'w')
 
 	while offset <= len(dumpdata) - 42:
 		rowbytes = dumpdata[ (offset) : offset + 42 ] #slice dumpdata list into data for one line
@@ -644,17 +650,52 @@ def main():
 			pass
 			
 		else:
-			decoded_data = decode_teletext_line(rowbytes)
-			
-			if findpage: # code to display all packets for pagetofind in magazinetofind
-				if decoded_data[0] == magazinetofind:
-					if decoded_data[1] == 0: # header packet
-						currentpageinmagazine = decoded_data[2]
-						if currentpageinmagazine == pagetofind:
+			if (t42):
+				outfile.write(bytes(rowbytes)) # output a t42 file
+			else:
+				decoded_data = decode_teletext_line(rowbytes)
+				
+				if findpage: # code to display all packets for pagetofind in magazinetofind
+					if decoded_data[0] == magazinetofind:
+						if decoded_data[1] == 0: # header packet
+							currentpageinmagazine = decoded_data[2]
+							if currentpageinmagazine == pagetofind:
+								display_header_data( decoded_data )
+						
+						elif currentpageinmagazine == pagetofind:
+							if decoded_data[1] < 26: # page row
+								coding = magCodings[decoded_data[0]%8]
+								function = magFunctions[decoded_data[0]%8]
+								if (coding == 0):
+									display_page_data( decoded_data )
+								elif (coding == 2):
+									if (function == 2 or function == 3):
+										if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
+											# pointer data
+											display_page_enhancement_data( decoded_data )
+										else:
+											# object definition data
+											display_page_enhancement_data_26( decoded_data )
+									else:
+										display_page_enhancement_data( decoded_data )
+								elif (coding == 3):
+									display_hamming_8_4_data( decoded_data )
+							
+							elif decoded_data[1] == 26: # page enhancement data:
+								display_page_enhancement_data_26( decoded_data )
+							
+							elif decoded_data[1] == 27: # link packet
+								display_link_data( decoded_data )
+							
+							elif decoded_data[1] == 28: # page enhancement data
+								display_page_enhancement_data( decoded_data )
+				
+				if not findpage: # code to display any packet
+					if not IDL:
+						if decoded_data[1] == 0: # header packet
 							display_header_data( decoded_data )
-					
-					elif currentpageinmagazine == pagetofind:
-						if decoded_data[1] < 26: # page row
+						
+						elif decoded_data[1] < 26: # page row
 							coding = magCodings[decoded_data[0]%8]
 							function = magFunctions[decoded_data[0]%8]
 							if (coding == 0):
@@ -680,53 +721,21 @@ def main():
 						
 						elif decoded_data[1] == 28: # page enhancement data
 							display_page_enhancement_data( decoded_data )
-			
-			if not findpage: # code to display any packet
-				if not IDL:
-					if decoded_data[1] == 0: # header packet
-						display_header_data( decoded_data )
+						
+						elif decoded_data[1] == 29: # page enhancement data
+							display_page_enhancement_data( decoded_data )
+						
+						elif decoded_data[1] == 30: 
+							if decoded_data[0] == 8: # Broadcast service data packets
+								display_broadcast_service_data( decoded_data )
+							else: # Independent data services
+								display_independent_data_service( decoded_data )
 					
-					elif decoded_data[1] < 26: # page row
-						coding = magCodings[decoded_data[0]%8]
-						function = magFunctions[decoded_data[0]%8]
-						if (coding == 0):
-							display_page_data( decoded_data )
-						elif (coding == 2):
-							if (function == 2 or function == 3):
-								if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
-									# pointer data
-									display_page_enhancement_data( decoded_data )
-								else:
-									# object definition data
-									display_page_enhancement_data_26( decoded_data )
-							else:
-								display_page_enhancement_data( decoded_data )
-						elif (coding == 3):
-							display_hamming_8_4_data( decoded_data )
-					
-					elif decoded_data[1] == 26: # page enhancement data:
-						display_page_enhancement_data_26( decoded_data )
-					
-					elif decoded_data[1] == 27: # link packet
-						display_link_data( decoded_data )
-					
-					elif decoded_data[1] == 28: # page enhancement data
-						display_page_enhancement_data( decoded_data )
-					
-					elif decoded_data[1] == 29: # page enhancement data
-						display_page_enhancement_data( decoded_data )
-					
-					elif decoded_data[1] == 30: 
-						if decoded_data[0] == 8: # Broadcast service data packets
-							display_broadcast_service_data( decoded_data )
-						else: # Independent data services
-							display_independent_data_service( decoded_data )
-				
-				if decoded_data[1] == 31: # Independent data services
-					display_independent_data_service( decoded_data )
+					if decoded_data[1] == 31: # Independent data services
+						display_independent_data_service( decoded_data )
 
 		offset += 42
 		outfile.flush()
 
 if __name__ == "__main__":
-    main()
+	main()
