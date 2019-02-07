@@ -622,26 +622,19 @@ def main():
 	infile = open(inputfile, 'rb')
 	filedata = list(infile.read())
 
-	dumpdata = []
-
-	fileoffset = 0
-
-	while fileoffset < len(filedata):
-		dumpdata += filedata[fileoffset:fileoffset + 0x2A] # copy 42 bytes
-		fileoffset+=offsetstep
-	
-	currentpageinmagazine = 0xFF # no page
-
-	offset = 0
-
 	global outfile # make outfile variable global
 	if (t42):
 		outfile = open(outputfile, 'wb')
 	else:
 		outfile = open(outputfile, 'w')
 
-	while offset <= len(dumpdata) - 42:
-		rowbytes = dumpdata[ (offset) : offset + 42 ] #slice dumpdata list into data for one line
+	fileoffset = 0
+	
+	currentpageinmagazine = 0xFF # no page
+
+	while fileoffset < len(filedata):
+		rowbytes = filedata[fileoffset:fileoffset + 0x2A] # read 42 bytes
+		fileoffset+=offsetstep
 		
 		#print("line {}".format(offset / 42))
 		
@@ -734,7 +727,6 @@ def main():
 					if decoded_data[1] == 31: # Independent data services
 						display_independent_data_service( decoded_data )
 
-		offset += 42
 		outfile.flush()
 
 if __name__ == "__main__":
