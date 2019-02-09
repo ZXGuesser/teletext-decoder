@@ -5,11 +5,7 @@ import sys, getopt
 from datetime import date, datetime, time, timedelta, tzinfo
 from functools import partial
 
-try:
-	import crcmod
-except ImportError:
-	print ("Requires python module 'crcmod'. Try 'pip3 install crcmod'")
-	sys.exit(2)
+import crcmod
 
 
 class FixedOffset(tzinfo):
@@ -564,7 +560,7 @@ def display_independent_data_service( decoded_data ):
 		outfile.write("\ninvalid Format Type (FT)\n")
 	outfile.write("\n")
 
-helpstring ="""usage: teletext-decoder.py -i <inputfile> -o <outputfile> [-p <page number>] [-d] [-s]
+helpstring ="""usage: teletext-decoder -i <inputfile> -o <outputfile> [-p <page number>] [-d] [-s]
  
 optional arguments:
  -p   output only packets belonging to page
