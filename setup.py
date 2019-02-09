@@ -12,6 +12,6 @@ setup(
             'teletext-decoder = teletextdecoder.decoder:main',
         ]
     },
-    install_requires=['crcmod'],
+    install_requires=['crcmod', 'click'],
     python_requires='>=3',
 )
