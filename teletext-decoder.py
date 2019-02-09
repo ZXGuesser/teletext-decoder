@@ -8,7 +8,7 @@ from functools import partial
 try:
 	import crcmod
 except ImportError:
-	print ("Requires python module 'crcmod'. Try 'pip install crcmod'")
+	print ("Requires python module 'crcmod'. Try 'pip3 install crcmod'")
 	sys.exit(2)
 
 
