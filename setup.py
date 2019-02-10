@@ -3,8 +3,8 @@ from setuptools import setup
 setup(
     name='teletext-decoder',
     version='0.1',
-    author='Author Name',
-    author_email='author@example.com',
+    author='Alistair Cree',
+    author_email='alistair@zxnet.co.uk',
     url='http://github.com/ZXGuesser/teletext-decoder',
     packages=['teletextdecoder'],
     entry_points={
