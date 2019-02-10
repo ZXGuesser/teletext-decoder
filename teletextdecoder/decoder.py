@@ -5,11 +5,8 @@ import sys, getopt
 from datetime import date, datetime, time, timedelta, tzinfo
 from functools import partial
 
-try:
-	import crcmod
-except ImportError:
-	print ("Requires python module 'crcmod'. Try 'pip3 install crcmod'")
-	sys.exit(2)
+import crcmod
+import click
 
 
 class FixedOffset(tzinfo):
@@ -564,54 +561,23 @@ def display_independent_data_service( decoded_data ):
 		outfile.write("\ninvalid Format Type (FT)\n")
 	outfile.write("\n")
 
-helpstring ="""usage: teletext-decoder.py -i <inputfile> -o <outputfile> [-p <page number>] [-d] [-s]
- 
-optional arguments:
- -p   output only packets belonging to page
- -d   output only independent data packets
- -s   input file uses 43 byte packet size (for WST TV card dumps)"""
 
-def main():
-	inputfile = ''
-	outputfile = ''
-	pageopt = 0x8FF
-	offsetstep = 42
-	IDL = False;
-	t42 = False;
+@click.command()
+@click.option('-i', '--input', type=click.File('rb'), help='Input file. Default: read from stdin.', default='-')
+@click.option('-o', '--output', type=click.Path(), help='Output file.', required=True)
+@click.option('-p', '--page', type=str, help='Page number.', default='8FF')
+@click.option('-d', '--idl', is_flag=True, help='Only output independent packets.')
+@click.option('-s', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
+@click.option('-t', '--t42', is_flag=True, help='Force t42 output.')
+def main(input, output, page, idl, s, t42):
+	pageopt = int(page, 16)
+	offsetstep = 43 if 2 else 42
 
-	try:
-		opts, args = getopt.getopt(sys.argv[1:],"i:o:p:dst")
-	except getopt.GetoptError as err:
-		print(err)
-		sys.exit(2)
-
-	for opt, arg in opts:
-		if opt in ('-i'):
-			inputfile = arg
-		elif opt in ('-o'):
-			outputfile = arg
-		elif opt in ('-p'):
-			try:
-				pageopt = int(arg, 16)
-			except:
-				print("invalid page number")
-				sys.exit(2)
-		elif opt in ('-s'):
-			offsetstep = 43;
-		elif opt in ('-d'):
-			IDL = True;
-		elif opt in ('-t'):
-			t42 = True;
-
-	if (inputfile == '' or outputfile == ''):
-		print(helpstring)
-		sys.exit()
-	
 	if (pageopt != 0x8FF):
 		if (pageopt < 0x100 or pageopt > 0x8FF):
 			print("invalid page number")
 			sys.exit(2)
-		if IDL:
+		if idl:
 			print("-p and -d options cannot be used at the same time")
 			sys.exit(2)
 		pagetofind = pageopt & 0xFF
@@ -620,75 +586,38 @@ def main():
 	else:
 		findpage = False
 	
-	
-
 	global outfile # make outfile variable global
 	if (t42):
-		outfile = open(outputfile, 'wb')
+		outfile = open(output, 'wb')
 	else:
-		outfile = open(outputfile, 'w')
+		outfile = open(output, 'w')
 
-	fileoffset = 0
-	
 	currentpageinmagazine = 0xFF # no page
 
-	with open(inputfile, 'rb') as infile:
-		for chunk in iter(partial(infile.read, offsetstep), b''):
-			rowbytes = chunk[0:0x2A] # read 42 bytes
-			
-			#print("line {}".format(offset / 42))
-			
-			if rowbytes[0] == 0:
-			#	print("no teletext data on this tv line\n")
-				pass
-				
+	for chunk in iter(partial(input.read, offsetstep), b''):
+		rowbytes = chunk[0:0x2A] # read 42 bytes
+
+		#print("line {}".format(offset / 42))
+
+		if rowbytes[0] == 0:
+		#	print("no teletext data on this tv line\n")
+			pass
+
+		else:
+			if (t42):
+				outfile.write(bytes(rowbytes)) # output a t42 file
 			else:
-				if (t42):
-					outfile.write(bytes(rowbytes)) # output a t42 file
-				else:
-					decoded_data = decode_teletext_line(rowbytes)
-					
-					if findpage: # code to display all packets for pagetofind in magazinetofind
-						if decoded_data[0] == magazinetofind:
-							if decoded_data[1] == 0: # header packet
-								currentpageinmagazine = decoded_data[2]
-								if currentpageinmagazine == pagetofind:
-									display_header_data( decoded_data )
-							
-							elif currentpageinmagazine == pagetofind:
-								if decoded_data[1] < 26: # page row
-									coding = magCodings[decoded_data[0]%8]
-									function = magFunctions[decoded_data[0]%8]
-									if (coding == 0):
-										display_page_data( decoded_data )
-									elif (coding == 2):
-										if (function == 2 or function == 3):
-											if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
-												# pointer data
-												display_page_enhancement_data( decoded_data )
-											else:
-												# object definition data
-												display_page_enhancement_data_26( decoded_data )
-										else:
-											display_page_enhancement_data( decoded_data )
-									elif (coding == 3):
-										display_hamming_8_4_data( decoded_data )
-								
-								elif decoded_data[1] == 26: # page enhancement data:
-									display_page_enhancement_data_26( decoded_data )
-								
-								elif decoded_data[1] == 27: # link packet
-									display_link_data( decoded_data )
-								
-								elif decoded_data[1] == 28: # page enhancement data
-									display_page_enhancement_data( decoded_data )
-					
-					if not findpage: # code to display any packet
-						if not IDL:
-							if decoded_data[1] == 0: # header packet
+				decoded_data = decode_teletext_line(rowbytes)
+
+				if findpage: # code to display all packets for pagetofind in magazinetofind
+					if decoded_data[0] == magazinetofind:
+						if decoded_data[1] == 0: # header packet
+							currentpageinmagazine = decoded_data[2]
+							if currentpageinmagazine == pagetofind:
 								display_header_data( decoded_data )
-							
-							elif decoded_data[1] < 26: # page row
+
+						elif currentpageinmagazine == pagetofind:
+							if decoded_data[1] < 26: # page row
 								coding = magCodings[decoded_data[0]%8]
 								function = magFunctions[decoded_data[0]%8]
 								if (coding == 0):
@@ -705,29 +634,61 @@ def main():
 										display_page_enhancement_data( decoded_data )
 								elif (coding == 3):
 									display_hamming_8_4_data( decoded_data )
-							
+
 							elif decoded_data[1] == 26: # page enhancement data:
 								display_page_enhancement_data_26( decoded_data )
-							
+
 							elif decoded_data[1] == 27: # link packet
 								display_link_data( decoded_data )
-							
+
 							elif decoded_data[1] == 28: # page enhancement data
 								display_page_enhancement_data( decoded_data )
-							
-							elif decoded_data[1] == 29: # page enhancement data
-								display_page_enhancement_data( decoded_data )
-							
-							elif decoded_data[1] == 30: 
-								if decoded_data[0] == 8: # Broadcast service data packets
-									display_broadcast_service_data( decoded_data )
-								else: # Independent data services
-									display_independent_data_service( decoded_data )
-						
-						if decoded_data[1] == 31: # Independent data services
-							display_independent_data_service( decoded_data )
 
-			outfile.flush()
+				if not findpage: # code to display any packet
+					if not idl:
+						if decoded_data[1] == 0: # header packet
+							display_header_data( decoded_data )
+
+						elif decoded_data[1] < 26: # page row
+							coding = magCodings[decoded_data[0]%8]
+							function = magFunctions[decoded_data[0]%8]
+							if (coding == 0):
+								display_page_data( decoded_data )
+							elif (coding == 2):
+								if (function == 2 or function == 3):
+									if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
+										# pointer data
+										display_page_enhancement_data( decoded_data )
+									else:
+										# object definition data
+										display_page_enhancement_data_26( decoded_data )
+								else:
+									display_page_enhancement_data( decoded_data )
+							elif (coding == 3):
+								display_hamming_8_4_data( decoded_data )
+
+						elif decoded_data[1] == 26: # page enhancement data:
+							display_page_enhancement_data_26( decoded_data )
+
+						elif decoded_data[1] == 27: # link packet
+							display_link_data( decoded_data )
+
+						elif decoded_data[1] == 28: # page enhancement data
+							display_page_enhancement_data( decoded_data )
+
+						elif decoded_data[1] == 29: # page enhancement data
+							display_page_enhancement_data( decoded_data )
+
+						elif decoded_data[1] == 30:
+							if decoded_data[0] == 8: # Broadcast service data packets
+								display_broadcast_service_data( decoded_data )
+							else: # Independent data services
+								display_independent_data_service( decoded_data )
+
+					if decoded_data[1] == 31: # Independent data services
+						display_independent_data_service( decoded_data )
+
+		outfile.flush()
 
 if __name__ == "__main__":
 	main()
