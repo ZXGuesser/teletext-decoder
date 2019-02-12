@@ -571,7 +571,7 @@ def display_independent_data_service( decoded_data ):
 @click.option('-t', '--t42', is_flag=True, help='Force t42 output.')
 def main(input, output, page, idl, s, t42):
 	pageopt = int(page, 16)
-	offsetstep = 43 if 2 else 42
+	offsetstep = 43 if s else 42
 
 	if (pageopt != 0x8FF):
 		if (pageopt < 0x100 or pageopt > 0x8FF):
