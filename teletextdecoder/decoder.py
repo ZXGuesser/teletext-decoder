@@ -333,7 +333,7 @@ def display_link_data( decoded_data ):
 				link = "Link 4:"
 			else:
 				link = l6
-			magazinenumber = decoded_data[0] ^ (get_bit(decoded_data[4+(2*i)], 15) << 2 | get_bit(decoded_data[4+(2*i)], 14) << 1 | get_bit(decoded_data[4+(2*i)], 7))
+			magazinenumber = (decoded_data[0] ^ (get_bit(decoded_data[4+(2*i)], 15) << 2 | get_bit(decoded_data[4+(2*i)], 14) << 1 | get_bit(decoded_data[4+(2*i)], 7))) & 7
 			if magazinenumber == 0:
 				magazinenumber = 8
 			linkpage = format((magazinenumber << 8) + decoded_data[3+(2*i)],'03X')
