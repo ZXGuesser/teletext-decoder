@@ -567,9 +567,10 @@ def display_independent_data_service( decoded_data ):
 @click.option('-o', '--output', type=click.Path(), help='Output file.', required=True)
 @click.option('-p', '--page', type=str, help='Page number.', default='8FF')
 @click.option('-d', '--idl', is_flag=True, help='Only output independent packets.')
+@click.option('--bsdp', is_flag=True, help='Only output Broadcast Service Data Packets.')
 @click.option('-s', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
 @click.option('-t', '--t42', is_flag=True, help='Force t42 output.')
-def main(input, output, page, idl, s, t42):
+def main(input, output, page, idl, bsdp, s, t42):
 	pageopt = int(page, 16)
 	offsetstep = 43 if s else 42
 
@@ -645,7 +646,7 @@ def main(input, output, page, idl, s, t42):
 								display_page_enhancement_data( decoded_data )
 
 				if not findpage: # code to display any packet
-					if not idl:
+					if not (idl or bsdp):
 						if decoded_data[1] == 0: # header packet
 							display_header_data( decoded_data )
 
@@ -684,9 +685,19 @@ def main(input, output, page, idl, s, t42):
 								display_broadcast_service_data( decoded_data )
 							else: # Independent data services
 								display_independent_data_service( decoded_data )
-
-					if decoded_data[1] == 31: # Independent data services
-						display_independent_data_service( decoded_data )
+						elif decoded_data[1] == 31: # Independent data services
+							display_independent_data_service( decoded_data )
+					
+					else:
+						if bsdp:
+							if decoded_data[1] == 30 and decoded_data[0] == 8: # Broadcast service data packets
+								display_broadcast_service_data( decoded_data )
+						
+						if idl:
+							if decoded_data[1] == 30 and decoded_data[0] != 8:
+								display_independent_data_service( decoded_data )
+							elif decoded_data[1] == 31: # Independent data services
+								display_independent_data_service( decoded_data )
 
 		outfile.flush()
 
