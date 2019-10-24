@@ -451,7 +451,7 @@ def display_broadcast_service_data( decoded_data ):
 		day = ((pdc_data[3] & 3) << 3) | ((pdc_data[4] & 0xE) >> 1)
 		month = ((pdc_data[4] & 1) << 3) | ((pdc_data[5] & 0xE) >> 1)
 		hour = ((pdc_data[5] & 1) << 4) | pdc_data[6]
-		minute = (pdc_data[7] << 2) | ((pdc_data[6] & 0xC) >> 2)
+		minute = (pdc_data[7] << 2) | ((pdc_data[8] & 0xC) >> 2)
 		
 		outfile.write("Programme Identification Label: {:02}/{:02} {:02}:{:02}\n".format(day,month,hour,minute))
 		
