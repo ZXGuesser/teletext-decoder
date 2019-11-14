@@ -570,7 +570,8 @@ def display_independent_data_service( decoded_data ):
 @click.option('--bsdp', is_flag=True, help='Only output Broadcast Service Data Packets.')
 @click.option('-s', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
 @click.option('-t', '--t42', is_flag=True, help='Force t42 output.')
-def main(input, output, page, idl, bsdp, s, t42):
+@click.option('--fix_parity', is_flag=True, help='Fix parity errors in t42 row output.')
+def main(input, output, page, idl, bsdp, s, t42, fix_parity):
 	pageopt = int(page, 16)
 	offsetstep = 43 if s else 42
 
@@ -606,7 +607,22 @@ def main(input, output, page, idl, bsdp, s, t42):
 
 		else:
 			if (t42):
-				outfile.write(bytes(rowbytes)) # output a t42 file
+				decoded_data = decode_teletext_line(rowbytes)
+				
+				if fix_parity and decoded_data[1] < 26 and decoded_data[1] > 0: # page row
+					'''
+					--fix_parity option to repair files exported with parity bit missing in row data from zxnet.co.uk/teletext/editor
+					'''
+					outfile.write(bytes(rowbytes[0:2]))
+					for i in range(2,42):
+						p = parity(rowbytes[i])
+						if p == 1:
+							outfile.write(bytes([(rowbytes[i])]))
+						else:
+							outfile.write(bytes([(rowbytes[i] | 0x80)]))
+				else:
+					outfile.write(bytes(rowbytes)) # output a t42 file
+				
 			else:
 				decoded_data = decode_teletext_line(rowbytes)
 
