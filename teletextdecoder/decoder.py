@@ -566,18 +566,23 @@ def display_independent_data_service( decoded_data ):
 @click.option('-i', '--input', type=click.File('rb'), help='Input file. Default: read from stdin.', default='-')
 @click.option('-o', '--output', type=click.Path(), help='Output file.', required=True)
 @click.option('-p', '--page', type=str, help='Page number.', default='8FF')
+@click.option('-s', '--subpage', type=str, help='Subpage number.', default='3F7F')
 @click.option('-d', '--idl', is_flag=True, help='Only output independent packets.')
 @click.option('--datachannel', type=int, help='IDL data channel.', default='0')
 @click.option('--bsdp', is_flag=True, help='Only output Broadcast Service Data Packets.')
 @click.option('--wst', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
 @click.option('--fix_parity', is_flag=True, help='Fix parity errors in t42 row output.')
-def main(input, output, page, idl, datachannel, bsdp, wst, fix_parity):
+def main(input, output, page, subpage, idl, datachannel, bsdp, wst, fix_parity):
 	pageopt = int(page, 16)
+	subpageopt = int(subpage, 16)
 	offsetstep = 43 if wst else 42
 
 	if (pageopt != 0x8FF):
 		if (pageopt < 0x100 or pageopt > 0x8FF):
 			print("invalid page number")
+			sys.exit(2)
+		if (subpageopt < 0 or subpageopt > 0x3F7F or subpageopt & 0xC080):
+			print("invalid subpage number")
 			sys.exit(2)
 		if idl:
 			print("-p and -d options cannot be used at the same time")
@@ -591,6 +596,7 @@ def main(input, output, page, idl, datachannel, bsdp, wst, fix_parity):
 	global outfile # make outfile variable global
 	file, ext = os.path.splitext(output)
 	
+	t42 = False
 	if (ext == '.t42'):
 		t42 = True
 		outfile = open(output, 'wb')
@@ -598,6 +604,7 @@ def main(input, output, page, idl, datachannel, bsdp, wst, fix_parity):
 		outfile = open(output, 'w')
 
 	currentpageinmagazine = 0xFF # no page
+	currentsubpageinmagazine = 0x3F7F # no subpage
 
 	for chunk in iter(partial(input.read, offsetstep), b''):
 		rowbytes = chunk[0:0x2A] # read 42 bytes
@@ -615,13 +622,14 @@ def main(input, output, page, idl, datachannel, bsdp, wst, fix_parity):
 				if decoded_data[0] == magazinetofind:
 					if decoded_data[1] == 0: # header packet
 						currentpageinmagazine = decoded_data[2]
-						if currentpageinmagazine == pagetofind:
+						currentsubpageinmagazine = decoded_data[3]
+						if currentpageinmagazine == pagetofind and (currentsubpageinmagazine == subpageopt or subpageopt == 0x3F7F):
 							if t42:
 								outfile.write(bytes(rowbytes))
 							else:
 								display_header_data( decoded_data )
 
-					elif currentpageinmagazine == pagetofind:
+					elif currentpageinmagazine == pagetofind and (currentsubpageinmagazine == subpageopt or subpageopt == 0x3F7F):
 						if decoded_data[1] < 26: # page row
 							coding = magCodings[decoded_data[0]%8]
 							function = magFunctions[decoded_data[0]%8]
