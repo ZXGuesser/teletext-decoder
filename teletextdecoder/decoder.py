@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # decode a teletext data stream and analyse the packets
 
-import sys, getopt
+import sys, getopt, os
 from datetime import date, datetime, time, timedelta, tzinfo
 from functools import partial
 
@@ -569,12 +569,11 @@ def display_independent_data_service( decoded_data ):
 @click.option('-d', '--idl', is_flag=True, help='Only output independent packets.')
 @click.option('--datachannel', type=int, help='IDL data channel.', default='0')
 @click.option('--bsdp', is_flag=True, help='Only output Broadcast Service Data Packets.')
-@click.option('-s', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
-@click.option('-t', '--t42', is_flag=True, help='Force t42 output.')
+@click.option('--wst', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
 @click.option('--fix_parity', is_flag=True, help='Fix parity errors in t42 row output.')
-def main(input, output, page, idl, datachannel, bsdp, s, t42, fix_parity):
+def main(input, output, page, idl, datachannel, bsdp, wst, fix_parity):
 	pageopt = int(page, 16)
-	offsetstep = 43 if s else 42
+	offsetstep = 43 if wst else 42
 
 	if (pageopt != 0x8FF):
 		if (pageopt < 0x100 or pageopt > 0x8FF):
@@ -590,7 +589,10 @@ def main(input, output, page, idl, datachannel, bsdp, s, t42, fix_parity):
 		findpage = False
 	
 	global outfile # make outfile variable global
-	if (t42):
+	file, ext = os.path.splitext(output)
+	
+	if (ext == '.t42'):
+		t42 = True
 		outfile = open(output, 'wb')
 	else:
 		outfile = open(output, 'w')
@@ -609,36 +611,38 @@ def main(input, output, page, idl, datachannel, bsdp, s, t42, fix_parity):
 		else:
 			decoded_data = decode_teletext_line(rowbytes)
 			
-			if (t42):
-				if fix_parity and decoded_data[1] < 26 and decoded_data[1] > 0: # page row
-					'''
-					--fix_parity option to repair files exported with parity bit missing in row data from zxnet.co.uk/teletext/editor
-					'''
-					outfile.write(bytes(rowbytes[0:2]))
-					for i in range(2,42):
-						p = parity(rowbytes[i])
-						if p == 1:
-							outfile.write(bytes([(rowbytes[i])]))
-						else:
-							outfile.write(bytes([(rowbytes[i] | 0x80)]))
-				else:
-					outfile.write(bytes(rowbytes)) # output a t42 file
-				
-			else:
-				if findpage: # code to display all packets for pagetofind in magazinetofind
-					if decoded_data[0] == magazinetofind:
-						if decoded_data[1] == 0: # header packet
-							currentpageinmagazine = decoded_data[2]
-							if currentpageinmagazine == pagetofind:
+			if findpage: # code to display all packets for pagetofind in magazinetofind
+				if decoded_data[0] == magazinetofind:
+					if decoded_data[1] == 0: # header packet
+						currentpageinmagazine = decoded_data[2]
+						if currentpageinmagazine == pagetofind:
+							if t42:
+								outfile.write(bytes(rowbytes))
+							else:
 								display_header_data( decoded_data )
 
-						elif currentpageinmagazine == pagetofind:
-							if decoded_data[1] < 26: # page row
-								coding = magCodings[decoded_data[0]%8]
-								function = magFunctions[decoded_data[0]%8]
-								if (coding == 0):
+					elif currentpageinmagazine == pagetofind:
+						if decoded_data[1] < 26: # page row
+							coding = magCodings[decoded_data[0]%8]
+							function = magFunctions[decoded_data[0]%8]
+							if (coding == 0):
+								if t42:
+									if fix_parity:
+										outfile.write(bytes(rowbytes[0:2]))
+										for i in range(2,42):
+											p = parity(rowbytes[i])
+											if p == 1:
+												outfile.write(bytes([(rowbytes[i])]))
+											else:
+												outfile.write(bytes([(rowbytes[i] | 0x80)]))
+									else:
+										outfile.write(bytes(rowbytes))
+								else:
 									display_page_data( decoded_data )
-								elif (coding == 2):
+							elif (coding == 2):
+								if t42:
+									outfile.write(bytes(rowbytes))
+								else:
 									if (function == 2 or function == 3):
 										if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
 											# pointer data
@@ -648,20 +652,47 @@ def main(input, output, page, idl, datachannel, bsdp, s, t42, fix_parity):
 											display_page_enhancement_data_26( decoded_data )
 									else:
 										display_page_enhancement_data( decoded_data )
-								elif (coding == 3):
+							elif (coding == 3):
+								if t42:
+									outfile.write(bytes(rowbytes))
+								else:
 									display_hamming_8_4_data( decoded_data )
 
-							elif decoded_data[1] == 26: # page enhancement data:
+						elif decoded_data[1] == 26: # page enhancement data:
+							if t42:
+								outfile.write(bytes(rowbytes))
+							else:
 								display_page_enhancement_data_26( decoded_data )
 
-							elif decoded_data[1] == 27: # link packet
+						elif decoded_data[1] == 27: # link packet
+							if t42:
+								outfile.write(bytes(rowbytes))
+							else:
 								display_link_data( decoded_data )
 
-							elif decoded_data[1] == 28: # page enhancement data
+						elif decoded_data[1] == 28: # page enhancement data
+							if t42:
+								outfile.write(bytes(rowbytes))
+							else:
 								display_page_enhancement_data( decoded_data )
 
-				if not findpage: # code to display any packet
-					if not (idl or bsdp):
+			if not findpage: # code to display any packet
+				if not (idl or bsdp):
+					if t42:
+						# send all packets to t42 file
+						if fix_parity and decoded_data[1] < 26 and decoded_data[1] > 0: # page row
+							outfile.write(bytes(rowbytes[0:2]))
+							for i in range(2,42):
+								p = parity(rowbytes[i])
+								if p == 1:
+									outfile.write(bytes([(rowbytes[i])]))
+								else:
+									outfile.write(bytes([(rowbytes[i] | 0x80)]))
+						else:
+							outfile.write(bytes(rowbytes))
+						
+					else:
+						# display decoded packets
 						if decoded_data[1] == 0: # header packet
 							display_header_data( decoded_data )
 
@@ -701,17 +732,23 @@ def main(input, output, page, idl, datachannel, bsdp, s, t42, fix_parity):
 								display_broadcast_service_data( decoded_data )
 							else: # Independent data services
 								display_independent_data_service( decoded_data )
-					
-					else:
-						if bsdp:
-							if decoded_data[1] == 30 and decoded_data[0] == 8: # Broadcast service data packets
+				
+				else:
+					if bsdp:
+						if decoded_data[1] == 30 and decoded_data[0] == 8: # Broadcast service data packets
+							if t42:
+								outfile.write(bytes(rowbytes))
+							else:
 								display_broadcast_service_data( decoded_data )
-						
-						if idl:
-							if decoded_data[1] == 30 or decoded_data[1] == 31:
-								dc = ((decoded_data[1] - 30) << 3) + (decoded_data[0] & 7)
-								if dc > 0: # Independent data services
-									if datachannel == 0 or dc == datachannel:
+					
+					if idl:
+						if decoded_data[1] == 30 or decoded_data[1] == 31:
+							dc = ((decoded_data[1] - 30) << 3) + (decoded_data[0] & 7)
+							if dc > 0: # Independent data services
+								if datachannel == 0 or dc == datachannel:
+									if t42:
+										outfile.write(bytes(rowbytes))
+									else:
 										display_independent_data_service( decoded_data )
 
 		outfile.flush()
