@@ -219,8 +219,9 @@ def decode_teletext_line( bytes ):
 		
 		# TODO care about function and coding of magazine
 		
-	elif packet == 30:
-		if (magazine == 8):
+	elif packet == 30 or packet == 31:
+		datachannel = ((packet - 30) << 3) + (magazine & 7)
+		if (datachannel == 0):
 			# Broadcast service data packets
 			for i in range(2,9): # hammed data
 				decoded_data.append(hamming_8_4_decode(bytes[i])[0])
@@ -233,11 +234,6 @@ def decode_teletext_line( bytes ):
 			# Independent data services
 			for i in range(2,42):
 				decoded_data.append(bytes[i])
-		
-	elif packet == 31:
-		# Independent data services
-		for i in range(2,42):
-			decoded_data.append(bytes[i])
 		
 	return decoded_data
 
@@ -525,8 +521,8 @@ def display_independent_data_service( decoded_data ):
 		for i in range (nextbyte,42):
 			if (i < nextbyte + DL):
 				outfile.write(" {:02x}".format(decoded_data[i]))
-				if (decoded_data[i] > 0x1F and decoded_data[i] < 0x80 ):
-					datastring += chr(decoded_data[i])
+				if (decoded_data[i] & 0x7f) > 0x1F:
+					datastring += chr(decoded_data[i] & 0x7f)
 				else:
 					datastring += "."
 			payload.append(decoded_data[i])
@@ -554,8 +550,12 @@ def display_independent_data_service( decoded_data ):
 		datastring = ""
 		for i in range (5,40):
 			outfile.write(" {:02x}".format(decoded_data[i]))
-			datastring += chr(decoded_data[i])
+			if (decoded_data[i] & 0x7f) > 0x1F:
+				datastring += chr(decoded_data[i] & 0x7f)
+			else:
+				datastring += "."
 		outfile.write("\n")
+		outfile.write("ASCII: {}\n".format(datastring))
 		outfile.write("Forward Error Correction bytes (FEC): 0x{:02x} 0x{:02x}\n".format(decoded_data[40], decoded_data[41]))
 	else:
 		outfile.write("\ninvalid Format Type (FT)\n")
@@ -567,11 +567,12 @@ def display_independent_data_service( decoded_data ):
 @click.option('-o', '--output', type=click.Path(), help='Output file.', required=True)
 @click.option('-p', '--page', type=str, help='Page number.', default='8FF')
 @click.option('-d', '--idl', is_flag=True, help='Only output independent packets.')
+@click.option('--datachannel', type=int, help='IDL data channel.', default='0')
 @click.option('--bsdp', is_flag=True, help='Only output Broadcast Service Data Packets.')
 @click.option('-s', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
 @click.option('-t', '--t42', is_flag=True, help='Force t42 output.')
 @click.option('--fix_parity', is_flag=True, help='Fix parity errors in t42 row output.')
-def main(input, output, page, idl, bsdp, s, t42, fix_parity):
+def main(input, output, page, idl, datachannel, bsdp, s, t42, fix_parity):
 	pageopt = int(page, 16)
 	offsetstep = 43 if s else 42
 
@@ -606,9 +607,9 @@ def main(input, output, page, idl, bsdp, s, t42, fix_parity):
 			pass
 
 		else:
+			decoded_data = decode_teletext_line(rowbytes)
+			
 			if (t42):
-				decoded_data = decode_teletext_line(rowbytes)
-				
 				if fix_parity and decoded_data[1] < 26 and decoded_data[1] > 0: # page row
 					'''
 					--fix_parity option to repair files exported with parity bit missing in row data from zxnet.co.uk/teletext/editor
@@ -624,8 +625,6 @@ def main(input, output, page, idl, bsdp, s, t42, fix_parity):
 					outfile.write(bytes(rowbytes)) # output a t42 file
 				
 			else:
-				decoded_data = decode_teletext_line(rowbytes)
-
 				if findpage: # code to display all packets for pagetofind in magazinetofind
 					if decoded_data[0] == magazinetofind:
 						if decoded_data[1] == 0: # header packet
@@ -696,13 +695,12 @@ def main(input, output, page, idl, bsdp, s, t42, fix_parity):
 						elif decoded_data[1] == 29: # page enhancement data
 							display_page_enhancement_data( decoded_data )
 
-						elif decoded_data[1] == 30:
-							if decoded_data[0] == 8: # Broadcast service data packets
+						elif decoded_data[1] == 30 or decoded_data[1] == 31:
+							dc = ((decoded_data[1] - 30) << 3) + (decoded_data[0] & 7)
+							if dc == 0: # Broadcast service data packets
 								display_broadcast_service_data( decoded_data )
 							else: # Independent data services
 								display_independent_data_service( decoded_data )
-						elif decoded_data[1] == 31: # Independent data services
-							display_independent_data_service( decoded_data )
 					
 					else:
 						if bsdp:
@@ -710,10 +708,11 @@ def main(input, output, page, idl, bsdp, s, t42, fix_parity):
 								display_broadcast_service_data( decoded_data )
 						
 						if idl:
-							if decoded_data[1] == 30 and decoded_data[0] != 8:
-								display_independent_data_service( decoded_data )
-							elif decoded_data[1] == 31: # Independent data services
-								display_independent_data_service( decoded_data )
+							if decoded_data[1] == 30 or decoded_data[1] == 31:
+								dc = ((decoded_data[1] - 30) << 3) + (decoded_data[0] & 7)
+								if dc > 0: # Independent data services
+									if datachannel == 0 or dc == datachannel:
+										display_independent_data_service( decoded_data )
 
 		outfile.flush()
 
