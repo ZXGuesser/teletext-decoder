@@ -705,7 +705,7 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 
 		#print("line {}".format(offset / 42))
 
-		if rowbytes[0] == 0:
+		if rowbytes[0] == 0 or rowbytes[0] == 0xff:
 		#	print("no teletext data on this tv line\n")
 			pass
 
@@ -853,7 +853,13 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 									elif txt:
 										display_independent_data_service( decoded_data )
 									elif bin:
-										outfile.write(decoded_data[8])
+										if dc > 7 and dc < 12 and decoded_data[2][0] & 1 == 0: # IDL A
+											DL = decoded_data[7][0] # explicit data length
+											if DL == -1:
+												DL = decoded_data[7][1] # true remaining data length
+											outfile.write(decoded_data[8][0:DL])
+										else:
+											pass # TODO other IDL formats
 
 		outfile.flush()
 
