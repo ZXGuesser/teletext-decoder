@@ -682,11 +682,20 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 	file, ext = os.path.splitext(output)
 	
 	t42 = False
+	bin = False
+	txt = False
 	if (ext == '.t42'):
 		t42 = True
 		outfile = open(output, 'wb')
-	else:
+	elif (ext == '.bin'):
+		bin = True
+		outfile = open(output, 'wb')
+	elif (ext == '.txt'):
+		txt = True
 		outfile = open(output, 'w')
+	else:
+		print("output file must have extension .txt .t42 or .bin")
+		sys.exit(2)
 
 	currentpageinmagazine = 0xFF # no page
 	currentsubpageinmagazine = 0x3F7F # no subpage
@@ -711,7 +720,7 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 						if currentpageinmagazine == pagetofind and (currentsubpageinmagazine == subpageopt or subpageopt == 0x3F7F):
 							if t42:
 								outfile.write(bytes(rowbytes))
-							else:
+							elif txt:
 								display_header_data( decoded_data )
 
 					elif currentpageinmagazine == pagetofind and (currentsubpageinmagazine == subpageopt or subpageopt == 0x3F7F):
@@ -730,12 +739,12 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 												outfile.write(bytes([(rowbytes[i] | 0x80)]))
 									else:
 										outfile.write(bytes(rowbytes))
-								else:
+								elif txt:
 									display_page_data( decoded_data )
 							elif (coding == 2):
 								if t42:
 									outfile.write(bytes(rowbytes))
-								else:
+								elif txt:
 									if (function == 2 or function == 3):
 										if ((decoded_data[1] < 3) or (decoded_data[1] < 5 and decoded_data[2][0] & 1)):
 											# pointer data
@@ -748,25 +757,25 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 							elif (coding == 3):
 								if t42:
 									outfile.write(bytes(rowbytes))
-								else:
+								elif txt:
 									display_hamming_8_4_data( decoded_data )
 
 						elif decoded_data[1] == 26: # page enhancement data:
 							if t42:
 								outfile.write(bytes(rowbytes))
-							else:
+							elif txt:
 								display_page_enhancement_data_26( decoded_data )
 
 						elif decoded_data[1] == 27: # link packet
 							if t42:
 								outfile.write(bytes(rowbytes))
-							else:
+							elif txt:
 								display_link_data( decoded_data )
 
 						elif decoded_data[1] == 28: # page enhancement data
 							if t42:
 								outfile.write(bytes(rowbytes))
-							else:
+							elif txt:
 								display_page_enhancement_data( decoded_data )
 
 			if not findpage: # code to display any packet
@@ -784,7 +793,7 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 						else:
 							outfile.write(bytes(rowbytes))
 						
-					else:
+					elif txt:
 						# display decoded packets
 						if decoded_data[1] == 0: # header packet
 							display_header_data( decoded_data )
@@ -832,7 +841,7 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 						if dc == 0: # broadcast service data packet
 							if t42:
 								outfile.write(bytes(rowbytes))
-							else:
+							elif txt:
 								display_broadcast_service_data( decoded_data )
 					
 					if idl:
@@ -841,8 +850,10 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 								if spaopt == -1 or (dc > 7 and dc < 12 and decoded_data[2][0] & 1 == 0 and decoded_data[4][0] == spaopt): # filter on service packet address
 									if t42:
 										outfile.write(bytes(rowbytes))
-									else:
+									elif txt:
 										display_independent_data_service( decoded_data )
+									elif bin:
+										outfile.write(decoded_data[8])
 
 		outfile.flush()
 
