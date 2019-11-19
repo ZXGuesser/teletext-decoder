@@ -219,7 +219,7 @@ def decode_teletext_line( bytes ):
 		
 		# TODO care about function and coding of magazine
 		
-	elif packet == 30 or packet == 31:
+	else: # packet 30 or 31:
 		datachannel = ((packet - 30) << 3) + (magazine & 7)
 		if datachannel == 0: # Broadcast service data packets
 			for i in range(2,9): # hammed data
@@ -452,19 +452,24 @@ def display_link_data( decoded_data ):
 
 def display_broadcast_service_data( decoded_data ):
 	outfile.write("Magazine: {}\n" .format(decoded_data[0]))
-	outfile.write("Packet {}: Broadcast service data packet " .format(decoded_data[1]))
+	outfile.write("Packet {}: Broadcast service data packet\n" .format(decoded_data[1]))
 	
-	imag = ((decoded_data[6] & 0x8) >> 3) | ((decoded_data[8] & 0xc) >> 1)
-	ipage = decoded_data[3] | (decoded_data[4] << 4)
-	isub = decoded_data[5] | ((decoded_data[6] & 0x7) << 4) | (decoded_data[7] << 8)| ((decoded_data[8] & 0x3) << 12)
+	imag = ((decoded_data[6][0] & 0x8) >> 3) | ((decoded_data[8][0] & 0xc) >> 1)
+	ipage = decoded_data[3][0] | (decoded_data[4][0] << 4)
+	isub = decoded_data[5][0] | ((decoded_data[6][0] & 0x7) << 4) | (decoded_data[7][0] << 8)| ((decoded_data[8][0] & 0x3) << 12)
 	
-	if (decoded_data[2] == 0 or decoded_data[2] == 1):
+	ierr = decoded_data[3][1] | decoded_data[4][1] | decoded_data[5][1] | decoded_data[6][1] | decoded_data[7][1] | decoded_data[8][1]
+	if ierr == 3:
+		ierr = 2
+	
+	if (decoded_data[2][0] == 0 or decoded_data[2][0] == 1):
 		# format 1
-		outfile.write("Format 1\n")
-		if (decoded_data[2] == 1):
-			outfile.write("Full field transmission\n")
+		outfile.write("Format 1. ")
+		if (decoded_data[2][0] == 1):
+			outfile.write("Full field transmission ")
 		else:
-			outfile.write("multiplexed transmission\n")
+			outfile.write("multiplexed transmission ")
+		outfile.write("(error {})\n".format(decoded_data[2][1]))
 		ni = REVERSE_BYTES[decoded_data[9]] << 8 | REVERSE_BYTES[decoded_data[10]]
 		tz = FixedOffset((-1 if ((decoded_data[11] & 0x40) > 0) else 1) * ((decoded_data[11] & 0x3E) * 15),timedelta(0))
 		mjd = (((decoded_data[12] & 0xF) - 1) * 10000) + ((((decoded_data[13] >> 4) & 0xF) - 1) * 1000) + (((decoded_data[13] & 0xF) - 1) * 100) + ((((decoded_data[14] >> 4) & 0xF) - 1) * 10) + ((decoded_data[14] & 0xF) - 1)
@@ -472,7 +477,8 @@ def display_broadcast_service_data( decoded_data ):
 		minutes = ((((decoded_data[16] >> 4) & 0xF) - 1) * 10) + ((decoded_data[16] & 0xF) - 1)
 		seconds = ((((decoded_data[17] >> 4) & 0xF) - 1) * 10) + ((decoded_data[17] & 0xF) - 1)
 		d = date.fromordinal(mjd + date(1858, 11, 17).toordinal())
-		outfile.write("Initial Teletext Page: {:03X}/{:04X}\nNetwork Identification Code: {:04X}\n".format(imag*0x100+ipage, isub, ni))
+		outfile.write("Initial Teletext Page: {:03X}/{:04X} (error {})\n".format(imag*0x100+ipage, isub, ierr))
+		outfile.write("Network Identification Code: {:04X}\n".format(ni))
 		try:
 			t = time(hours,minutes,seconds, tzinfo=tz)
 			dt = datetime.combine(d,t)
@@ -485,13 +491,14 @@ def display_broadcast_service_data( decoded_data ):
 		outfile.write("Reserved Bytes:")
 		for i in range (18,22):
 			outfile.write (" 0x{:02x}".format(decoded_data[i]))
-	elif (decoded_data[2] == 2 or decoded_data[2] == 3):
+	elif (decoded_data[2][0] == 2 or decoded_data[2][0] == 3):
 		# format 2
-		outfile.write("Format 2 [may have incorrect data]\n")
-		if (decoded_data[2] == 3):
-			outfile.write("Full field transmission\n")
+		outfile.write("Format 2 [may have incorrect data] ")
+		if (decoded_data[2][0] == 3):
+			outfile.write("Full field transmission. ")
 		else:
-			outfile.write("multiplexed transmission\n")
+			outfile.write("multiplexed transmission. ")
+		outfile.write("(error {})\n".format(decoded_data[2][1]))
 		outfile.write("Initial Teletext Page: {:03X}/{:04X}\n".format(imag*0x100+ipage, isub))
 		
 		pdc_data = []
@@ -531,7 +538,7 @@ def display_broadcast_service_data( decoded_data ):
 				outfile.write (" 0x{:02x}".format(pdc_data[i]))
 		
 	else:
-		outfile.write("\nInvalid designation code: {}\n\n".format(decoded_data[2]));
+		outfile.write("\nInvalid designation code: {} (error {})\n\n".format(decoded_data[2][0], decoded_data[2][1]));
 		return
 	
 	outfile.write("\nStatusDisplay: {}\n\n".format(decoded_data[22]));
@@ -640,15 +647,21 @@ def display_independent_data_service( decoded_data ):
 @click.option('-p', '--page', type=str, help='Page number.', default='8FF')
 @click.option('-s', '--subpage', type=str, help='Subpage number.', default='3F7F')
 @click.option('-d', '--idl', is_flag=True, help='Only output independent packets.')
-@click.option('--datachannel', type=int, help='IDL data channel.', default='0')
+@click.option('--datachannel', type=int, help='IDL data channel.', default='-1')
+@click.option('--spa', type=str, help='IDL format A service packet address.', default='-1')
 @click.option('--bsdp', is_flag=True, help='Only output Broadcast Service Data Packets.')
 @click.option('--wst', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
 @click.option('--fix_parity', is_flag=True, help='Fix parity errors in t42 row output.')
-def main(input, output, page, subpage, idl, datachannel, bsdp, wst, fix_parity):
+def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_parity):
 	pageopt = int(page, 16)
 	subpageopt = int(subpage, 16)
 	offsetstep = 43 if wst else 42
-
+	
+	spaopt = int(spa, 16)
+	
+	if spaopt > -1 or datachannel > -1:
+		idl = True
+	
 	if (pageopt != 0x8FF):
 		if (pageopt < 0x100 or pageopt > 0x8FF):
 			print("invalid page number")
@@ -657,7 +670,7 @@ def main(input, output, page, subpage, idl, datachannel, bsdp, wst, fix_parity):
 			print("invalid subpage number")
 			sys.exit(2)
 		if idl:
-			print("-p and -d options cannot be used at the same time")
+			print("page and idl filtering options cannot be used at the same time")
 			sys.exit(2)
 		pagetofind = pageopt & 0xFF
 		magazinetofind = (pageopt & 0xF00) >> 8
@@ -814,18 +827,18 @@ def main(input, output, page, subpage, idl, datachannel, bsdp, wst, fix_parity):
 								display_independent_data_service( decoded_data )
 				
 				else:
+					dc = ((decoded_data[1] - 30) << 3) + (decoded_data[0] & 7)
 					if bsdp:
-						if decoded_data[1] == 30 and decoded_data[0] == 8: # Broadcast service data packets
+						if dc == 0: # broadcast service data packet
 							if t42:
 								outfile.write(bytes(rowbytes))
 							else:
 								display_broadcast_service_data( decoded_data )
 					
 					if idl:
-						if decoded_data[1] == 30 or decoded_data[1] == 31:
-							dc = ((decoded_data[1] - 30) << 3) + (decoded_data[0] & 7)
-							if dc > 0: # Independent data services
-								if datachannel == 0 or dc == datachannel:
+						if dc > 0: # Independent data services
+							if datachannel == -1 or dc == datachannel: # filter datachannel
+								if spaopt == -1 or (dc > 7 and dc < 12 and decoded_data[2][0] & 1 == 0 and decoded_data[4][0] == spaopt): # filter on service packet address
 									if t42:
 										outfile.write(bytes(rowbytes))
 									else:
