@@ -221,19 +221,90 @@ def decode_teletext_line( bytes ):
 		
 	elif packet == 30 or packet == 31:
 		datachannel = ((packet - 30) << 3) + (magazine & 7)
-		if (datachannel == 0):
-			# Broadcast service data packets
+		if datachannel == 0: # Broadcast service data packets
 			for i in range(2,9): # hammed data
-				decoded_data.append(hamming_8_4_decode(bytes[i])[0])
+				decoded_data.append(hamming_8_4_decode(bytes[i]))
 			for i in range(9,22):
 				decoded_data.append(bytes[i])
 			for i in range(22,42):
 				characterbytes += chr( bytes[i] & 0x7F ) #strip parity and add to string
 			decoded_data.append(characterbytes) # page row data
+			
+		elif (datachannel & 7) == 4: # low bit-rate audio
+			decoded_data.append(hamming_8_4_decode(bytes[2])) # service byte
+			for i in range(3,42):
+				decoded_data.append(bytes[i]) # control byte and audio data
+			
+		elif (datachannel & 7) == 5 or (datachannel & 7) == 6: # datavideo
+			for i in range(2,7):
+				decoded_data.append(hamming_8_4_decode(bytes[i])) # packet address and control bytes
+			for i in range(7,42):
+				decoded_data.append(bytes[i]) # user data and crc
+			
+		elif datachannel > 7 and datachannel < 12 and hamming_8_4_decode(bytes[2])[0] & 1 == 0: # IDL format A
+			FT = hamming_8_4_decode(bytes[2])
+			decoded_data.append(FT) # format type
+			IAL = hamming_8_4_decode(bytes[3])
+			decoded_data.append(IAL) # interpretation and address length
+			length = 36
+			next = 4
+
+			if (IAL[0] & 7) < 7 and IAL[0] > 0: # only decode valid SPA lengths
+				SPA = 0
+				err = 0
+				for i in range(0, (IAL[0] & 7)):
+					SPA += hamming_8_4_decode(bytes[next])[0] << (i*4)
+					err |= hamming_8_4_decode(bytes[next])[1]
+					next += 1
+					length -= 1
+				if err == 3:
+					err = 2
+				decoded_data.append((SPA,err))
+			else:
+				decoded_data.append((-1,0)) # no SPA
+			
+			if FT[0] & 2: # repeat facility applies
+				decoded_data.append(bytes[next])
+				next += 1
+			else:
+				decoded_data.append(-1) # no RI
+			
+			if FT[0] & 4: # implicit continuity indicator
+				decoded_data.append(bytes[next])
+				next += 1
+			else:
+				decoded_data.append(-1) # no CI
+			
+			
+			if FT[0] & 8: # data length
+				length = 39-next # true length of user data
+				decoded_data.append((bytes[next], length)) # DL and true length
+				next += 1
+			else:
+				length = 40-next # true length of user data
+				decoded_data.append((-1, length)) # no DL and true length
+			
+			payload = bytearray()
+			for i in range(0,length):
+				payload.append(bytes[next+i])
+				
+			decoded_data.append(payload) # user data
+			
+			crc = bytearray([bytes[40],bytes[41]])
+			
+			decoded_data.append(crc) # crc bytes
+			
+		elif ((datachannel > 7 and datachannel < 12) or datachannel == 15) and hamming_8_4_decode(bytes[2])[0] & 3 == 1: # IDL format B
+			# TODO: refactor decoding IDL format B into decode_teletext_line
+			FT = hamming_8_4_decode(bytes[2])
+			decoded_data.append(FT) # format type
+			for i in range(3,42):
+				decoded_data.append(bytes[i]) # TODO
+		
 		else:
-			# Independent data services
-			for i in range(2,42):
-				decoded_data.append(bytes[i])
+			# unassigned datachannel or reserved format type
+			decoded_data.append(hamming_8_4_decode(bytes[2]))
+			pass
 		
 	return decoded_data
 
@@ -470,79 +541,80 @@ idl_a_crc = crcmod.mkCrcFun(0x10291, initCrc=0, rev=True)
 def display_independent_data_service( decoded_data ):
 	datachannel = (decoded_data[0]%8) + ((decoded_data[1]&1)<<3)
 	outfile.write("Data Channel: {}.".format(datachannel))
-	FT = hamming_8_4_decode(decoded_data[2])[0]
 	
-	if (FT & 1 == 0):
-		outfile.write(" Format A\n")
-		DL = 36
+	if datachannel == 4 or datachannel == 12:
+		outfile.write("Low bit-rate audio\n")
 		
-		IAL = hamming_8_4_decode(decoded_data[3])[0]
+	elif (datachannel & 7) == 5 or (datachannel & 7) == 6:
+		outfile.write("Datavideo\n")
+		
+	elif datachannel > 7 and datachannel < 12 and decoded_data[2][0] & 1 == 0: # IDL format A
+		outfile.write(" Format A. (error {})\n". format(decoded_data[2][1]))
+		
+		FT = decoded_data[2][0]
+		
+		IAL = decoded_data[3][0]
 		if IAL & 7 == 7:
 			outfile.write("invalid Interpretation and Address Length (IAL)\n")
 			pass
+		
 		if IAL & 7:
-			SPA = 0
-			for i in range (0,IAL):
-				SPA += hamming_8_4_decode(decoded_data[4+i])[0] << (4 * i)
-			outfile.write("Service Packet Address (SPA): 0x{:x}\n".format(SPA))
-			DL -= IAL&7
+			SPA = decoded_data[4]
+			outfile.write("Service Packet Address (SPA): 0x{:x} (error {})\n".format(SPA[0], SPA[1]))
 		
-		nextbyte = 4+(IAL&7)
-		if FT & 2:
-			#repeat facility
-			RI = decoded_data[nextbyte]
-			outfile.write("Repeat Indicator (RI): 0x{:02x}\n".format(RI))
-			nextbyte += 1
-			DL -= 1
-			
-		payload = bytearray()
+		if decoded_data[5] > -1:
+			outfile.write("Repeat Indicator (RI): 0x{:02x}\n".format(decoded_data[5]))
 		
-		if FT & 4:
-			#explicit continuity indicator
-			CI = decoded_data[nextbyte]
-			outfile.write("Explicit Continuity Indicator (CI): 0x{:02x}\n".format(CI))
-			payload.append(CI)
-			nextbyte += 1
-			DL -= 1
+		crcdata = bytearray()
 		
-		if FT & 8:
-			#data length
-			if (decoded_data[nextbyte] > DL) or (decoded_data[nextbyte] & 0xC0):
-				outfile.write("invalid data length (DL)\n")
-				pass
+		if decoded_data[6] > -1:
+			outfile.write("Explicit Continuity Indicator (CI): 0x{:02x}\n".format(decoded_data[6]))
+			crcdata.append(decoded_data[6]) # include in checksum
+		
+		length = decoded_data[7][1] # true remaining data length
+		DL = decoded_data[7][0] # explicit data length
+		if (DL > -1):
+			crcdata.append(DL) # include in checksum
+			if (DL > length):
+				outfile.write("invalid explicit data length (DL)\n")
+				DL = length
 			else:
-				DL = decoded_data[nextbyte]
 				outfile.write("Data Length (DL): {} bytes\n".format(DL))
-				payload.append(DL)
-				nextbyte += 1
+		else:
+			DL = length # no dummy bytes in payload
+		
+		payload = decoded_data[8]
 		
 		outfile.write("User Data:")
 		datastring = ""
-		for i in range (nextbyte,42):
-			if (i < nextbyte + DL):
-				outfile.write(" {:02x}".format(decoded_data[i]))
-				if (decoded_data[i] & 0x7f) > 0x1F:
-					datastring += chr(decoded_data[i] & 0x7f)
-				else:
-					datastring += "."
-			payload.append(decoded_data[i])
+		
+		for i in range (0, DL):
+			outfile.write(" {:02x}".format(payload[i]))
+			if (payload[i] & 0x7f) > 0x1F:
+				datastring += chr(payload[i] & 0x7f)
+			else:
+				datastring += "."
 		outfile.write("\n")
 		outfile.write("ASCII: {}\n".format(datastring))
 		
-		crc = idl_a_crc(payload)
+		crcdata.extend(payload) # payload and any undefined bytes
+		crcdata.extend(decoded_data[9]) # crc word
 		
-		if (FT & 4):
+		crc = idl_a_crc(crcdata)
+		
+		if (FT & 4): # explicit continuity indicator
 			if (crc != 0):
 				outfile.write("CRC error\n")
-		else:
+		else: # implicit continuity indicator
 			if (crc >> 8) & 0xff == (crc & 0xff):
 				outfile.write("Implicit Continuity Indicator (CI): 0x{:02x}\n".format(crc & 0xff))
 			else:
 				outfile.write("CRC error\n")
 		
-	elif (FT & 2 == 0):
-		outfile.write(" Format B\n")
-		outfile.write("Application number: {}\n".format((FT >> 2) & 3))
+	elif ((datachannel > 7 and datachannel < 12) or datachannel == 15) and decoded_data[2][0] & 3 == 1: # IDL format B
+		# TODO: refactor decoding IDL format B into decode_teletext_line
+		outfile.write(" Format B. (error {})\n". format(decoded_data[2][1]))
+		outfile.write("Application number: {}\n".format((decoded_data[2][0] >> 2) & 3))
 		outfile.write("Application identifier: 0x{:x}\n".format(hamming_8_4_decode(decoded_data[3])[0]))
 		outfile.write("Continuity Index (CI): 0x{:x}\n".format(hamming_8_4_decode(decoded_data[4])[0]))
 		
@@ -558,7 +630,7 @@ def display_independent_data_service( decoded_data ):
 		outfile.write("ASCII: {}\n".format(datastring))
 		outfile.write("Forward Error Correction bytes (FEC): 0x{:02x} 0x{:02x}\n".format(decoded_data[40], decoded_data[41]))
 	else:
-		outfile.write("\ninvalid Format Type (FT)\n")
+		outfile.write("\nUnknown IDL type\n")
 	outfile.write("\n")
 
 
