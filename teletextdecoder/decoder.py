@@ -471,7 +471,8 @@ def display_broadcast_service_data( decoded_data ):
 			outfile.write("multiplexed transmission ")
 		outfile.write("(error {})\n".format(decoded_data[2][1]))
 		ni = REVERSE_BYTES[decoded_data[9]] << 8 | REVERSE_BYTES[decoded_data[10]]
-		tz = FixedOffset((-1 if ((decoded_data[11] & 0x40) > 0) else 1) * ((decoded_data[11] & 0x3E) * 15),timedelta(0))
+		offs = (-1 if ((decoded_data[11] & 0x40) > 0) else 1) * ((decoded_data[11] & 0x3E) * 15)
+		tz = FixedOffset(offs,timedelta(0))
 		mjd = (((decoded_data[12] & 0xF) - 1) * 10000) + ((((decoded_data[13] >> 4) & 0xF) - 1) * 1000) + (((decoded_data[13] & 0xF) - 1) * 100) + ((((decoded_data[14] >> 4) & 0xF) - 1) * 10) + ((decoded_data[14] & 0xF) - 1)
 		hours = ((((decoded_data[15] >> 4) & 0xF) - 1) * 10) + ((decoded_data[15] & 0xF) - 1)
 		minutes = ((((decoded_data[16] >> 4) & 0xF) - 1) * 10) + ((decoded_data[16] & 0xF) - 1)
@@ -481,7 +482,7 @@ def display_broadcast_service_data( decoded_data ):
 		outfile.write("Network Identification Code: {:04X}\n".format(ni))
 		try:
 			t = time(hours,minutes,seconds, tzinfo=tz)
-			dt = datetime.combine(d,t)
+			dt = datetime.combine(d,t) + timedelta(minutes=offs)
 			outfile.write("Timestamp: {}\n".format(dt.isoformat()))
 		except (ValueError):
 			outfile.write("Invalid time/date bytes:")
