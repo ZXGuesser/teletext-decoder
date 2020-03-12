@@ -147,7 +147,10 @@ def decode_teletext_line( bytes ):
 		decoded_data.append(control)
 		
 		for i in range(10,42):
-			header += chr( bytes[i] & 0x7F ) #strip parity and add to string
+			if (bytes[i] & 0x7f) < 0x20:
+				header += "⟦%0.2X⟧" % (bytes[i] & 0x7f)
+			else:
+				header += chr( bytes[i] & 0x7F ) #strip parity and add to string
 		
 		decoded_data.append(header)
 		
@@ -163,7 +166,10 @@ def decode_teletext_line( bytes ):
 		if (magCodings[magazine%8] == 0):
 			# return magazine, row, characters
 			for i in range(2,42):
-				characterbytes += chr( bytes[i] & 0x7F ) #strip parity and add to string
+				if (bytes[i] & 0x7f) < 0x20:
+					characterbytes += "⟦%0.2X⟧" % (bytes[i] & 0x7f)
+				else:
+					characterbytes += chr( bytes[i] & 0x7F ) #strip parity and add to string
 			
 			decoded_data.append(characterbytes) # page row data
 		elif (magCodings[magazine%8] == 2):
@@ -227,7 +233,10 @@ def decode_teletext_line( bytes ):
 			for i in range(9,22):
 				decoded_data.append(bytes[i])
 			for i in range(22,42):
-				characterbytes += chr( bytes[i] & 0x7F ) #strip parity and add to string
+				if (bytes[i] & 0x7f) < 0x20:
+					characterbytes += "⟦%0.2X⟧" % (bytes[i] & 0x7f)
+				else:
+					characterbytes += chr( bytes[i] & 0x7F ) #strip parity and add to string
 			decoded_data.append(characterbytes) # page row data
 			
 		elif (datachannel & 7) == 4: # low bit-rate audio
@@ -693,7 +702,7 @@ def main(input, output, page, subpage, idl, datachannel, spa, bsdp, wst, fix_par
 		outfile = open(output, 'wb')
 	elif (ext == '.txt'):
 		txt = True
-		outfile = open(output, 'w')
+		outfile = open(output, 'w', encoding='utf-8')
 	else:
 		print("output file must have extension .txt .t42 or .bin")
 		sys.exit(2)
