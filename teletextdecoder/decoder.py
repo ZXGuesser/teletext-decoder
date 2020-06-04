@@ -46,7 +46,7 @@ def hamming_8_4_decode( byte ):
 	check = (c[0] << 2) | (c[1] << 1) | (c[2])
 	
 	if p:
-		if check is not 7:
+		if check != 7:
 			errors = 2
 	else:
 		errors = 1
