@@ -156,7 +156,7 @@ def decode_teletext_line( bytes ):
         
         if (page == 0xFE):
             magFunctions[magazine%8] = 6 # MOT
-            magCodings[magazine%8] = 3 
+            magCodings[magazine%8] = 3
         else:
             magFunctions[magazine%8] = 0 # default page function
             magCodings[magazine%8] = 0 # default page coding
@@ -180,6 +180,15 @@ def decode_teletext_line( bytes ):
         elif (magCodings[magazine%8] == 3):
             for i in range(2,42):
                 decoded_data.append(hamming_8_4_decode(bytes[i]));
+        elif (magCodings[magazine%8] == 4):
+            for i in range(2,10):
+                decoded_data.append(hamming_8_4_decode(bytes[i]));
+            for i in range(10,22):
+                decoded_data.append(chr(bytes[i] & 0x7F));
+            for i in range(22,30):
+                decoded_data.append(hamming_8_4_decode(bytes[i]));
+            for i in range(30,42):
+                decoded_data.append(chr(bytes[i] & 0x7F));
         
     elif packet == 26:
         # page enhancement packet
@@ -278,30 +287,69 @@ def decode_teletext_line( bytes ):
             else:
                 decoded_data.append(-1) # no RI
             
+            crcdata = bytearray()
+            
+            same_count = 0
+            
             if FT[0] & 4: # implicit continuity indicator
                 decoded_data.append(bytes[next])
+                crcdata.append(bytes[next]) # include in checksum
+                if bytes[next] == 0 or bytes[next] == 0xff:
+                    same_count = 1
+                prev_byte = bytes[next]
                 next += 1
             else:
                 decoded_data.append(-1) # no CI
-            
+                prev_byte = bytes[-1]
             
             if FT[0] & 8: # data length
                 length = 39-next # true length of user data
-                decoded_data.append((bytes[next], length)) # DL and true length
+                decoded_data.append([bytes[next], length, 0]) # DL, true length, dummy bytes
+                crcdata.append(bytes[next]) # include in checksum
+                payload_length = bytes[next] # explicit length
+                same_count = 0 # explicit DL is either not zero or makes count irrelevant
                 next += 1
             else:
                 length = 40-next # true length of user data
-                decoded_data.append((-1, length)) # no DL and true length
+                decoded_data.append([-1, length, 0]) # no DL, true length, dummy bytes
+                payload_length = length # true length
             
-            payload = bytearray()
+            user_data = bytearray() # full user_data
+            
             for i in range(0,length):
-                payload.append(bytes[next+i])
+                user_data.append(bytes[next+i])
                 
-            decoded_data.append(payload) # user data
+            payload = bytearray() # only payload
+            
+            for i in range (0, payload_length):
+                if same_count > 7:
+                    same_count = 0;
+                    prev_byte = bytes[next+i]
+                    decoded_data[7][2] += 1; # increase dummy byte count
+                    continue
+                else:
+                    payload.append(bytes[next+i])
+                
+                if bytes[next+i] == 0 or bytes[next+i] == 0xff:
+                    if bytes[next+i] == prev_byte:
+                        same_count += 1
+                    else:
+                        same_count = 1
+                else:
+                    same_count = 0
+                
+                prev_byte = bytes[next+i]
+                
+            decoded_data.append((user_data, payload)) # user data and extracted payload
             
             crc = bytearray([bytes[40],bytes[41]])
             
-            decoded_data.append(crc) # crc bytes
+            crcdata.extend(user_data) # user_data including dummy and undefined bytes
+            crcdata.extend(crc) # crc word
+            
+            decoded_data.append((crc, idl_a_crc(crcdata))) # crc bytes and true crc
+            
+            
             
         elif ((datachannel > 7 and datachannel < 12) or datachannel == 15) and hamming_8_4_decode(bytes[2])[0] & 3 == 1: # IDL format B
             # TODO: refactor decoding IDL format B into decode_teletext_line
@@ -358,6 +406,29 @@ def display_hamming_8_4_data( decoded_data ):
     outfile.write("\n errors: ")
     for i in range (2,42):
         outfile.write("{:x} " .format(decoded_data[i][1]))
+    outfile.write("\n\n")
+
+def display_hamming_text_groups( decoded_data ):
+    outfile.write("Magazine: {}\n" .format(decoded_data[0]))
+    outfile.write("Packet {}: groups of bytes coded Hamming 8/4 and 7-bit text" .format(decoded_data[1]))
+    outfile.write("\ndecoded: ")
+    for i in range (2,10):
+        outfile.write("{:x} " .format(decoded_data[i][0]))
+    outfile.write("\n errors: ")
+    for i in range (2,10):
+        outfile.write("{:x} " .format(decoded_data[i][1]))
+    outfile.write("\n   Text: ")
+    for i in range (10,22):
+        outfile.write("{}" .format(decoded_data[i][0]))
+    outfile.write("\n\ndecoded: ")
+    for i in range (22,30):
+        outfile.write("{:x} " .format(decoded_data[i][0]))
+    outfile.write("\n errors: ")
+    for i in range (22,30):
+        outfile.write("{:x} " .format(decoded_data[i][1]))
+    outfile.write("\n   Text: ")
+    for i in range (30,42):
+        outfile.write("{}" .format(decoded_data[i][0]))
     outfile.write("\n\n")
     
 def display_page_enhancement_data_26( decoded_data ):
@@ -582,42 +653,56 @@ def display_independent_data_service( decoded_data ):
         if decoded_data[5] > -1:
             outfile.write("Repeat Indicator (RI): 0x{:02x}\n".format(decoded_data[5]))
         
-        crcdata = bytearray()
+        same_count = 0
         
         if decoded_data[6] > -1:
             outfile.write("Explicit Continuity Indicator (CI): 0x{:02x}\n".format(decoded_data[6]))
-            crcdata.append(decoded_data[6]) # include in checksum
+            if decoded_data[6] == 0 or decoded_data[6] == 0xff:
+                same_count = 1
         
-        length = decoded_data[7][1] # true remaining data length
         DL = decoded_data[7][0] # explicit data length
+        length = decoded_data[7][1] # true data length
+        dummies = decoded_data[7][2] # dummy bytes
         if (DL > -1):
-            crcdata.append(DL) # include in checksum
             if (DL > length):
                 outfile.write("invalid explicit data length (DL)\n")
                 DL = length
             else:
-                outfile.write("Data Length (DL): {} bytes\n".format(DL))
+                outfile.write("Data Length (DL): {} bytes".format(DL))
+                if dummies > 0:
+                    outfile.write(" ({} dummy byte".format(dummies))
+                    if dummies != 1:
+                        outfile.write("s")
+                    outfile.write(")")
+                outfile.write(".\n")
+            
+            same_count = 0 # explicit DL is either not zero or makes count irrelevant
         else:
-            DL = length # no dummy bytes in payload
+            DL = length
         
-        payload = decoded_data[8]
+        user_data = decoded_data[8][0] # data as transmitted
+        payload = decoded_data[8][1] # decoded payload bytes
         
         outfile.write("User Data:")
         datastring = ""
         
-        for i in range (0, DL):
-            outfile.write(" {:02x}".format(payload[i]))
-            if (payload[i] & 0x7f) > 0x1F:
-                datastring += chr(payload[i] & 0x7f)
+        prev_byte = decoded_data[6]
+        pbyte = 0
+        for i in range (0, length):
+            if pbyte < len(payload) and user_data[i] == payload[pbyte]:
+                outfile.write(" {:02x}".format(user_data[i]))
+                if (user_data[i] & 0x7f) > 0x1F and (user_data[i] & 0x7f) < 0x7f:
+                    datastring += chr(user_data[i] & 0x7f)
+                else:
+                    datastring += "."
+                pbyte += 1
             else:
-                datastring += "."
+                outfile.write(" ⟦{:02x}⟧".format(user_data[i]))
+        
         outfile.write("\n")
-        outfile.write("ASCII: {}\n".format(datastring))
+        outfile.write("ASCII payload: {}\n".format(datastring))
         
-        crcdata.extend(payload) # payload and any undefined bytes
-        crcdata.extend(decoded_data[9]) # crc word
-        
-        crc = idl_a_crc(crcdata)
+        crc = decoded_data[9][1]
         
         if (FT & 4): # explicit continuity indicator
             if (crc != 0):
@@ -770,6 +855,11 @@ def main(input, output, page, subpage, idl, headers, datachannel, spa, bsdp, wst
                                     outfile.write(bytes(rowbytes))
                                 elif txt:
                                     display_hamming_8_4_data( decoded_data )
+                            elif (coding == 4):
+                                if t42:
+                                    outfile.write(bytes(rowbytes))
+                                elif txt:
+                                    display_hamming_text_groups( decoded_data )
 
                         elif decoded_data[1] == 26: # page enhancement data:
                             if t42:
@@ -869,7 +959,8 @@ def main(input, output, page, subpage, idl, headers, datachannel, spa, bsdp, wst
                                             DL = decoded_data[7][0] # explicit data length
                                             if DL == -1:
                                                 DL = decoded_data[7][1] # true remaining data length
-                                            outfile.write(decoded_data[8][0:DL])
+                                            payload = decoded_data[8][1] # extracted payload bytes
+                                            outfile.write(payload[0:DL])
                                         else:
                                             pass # TODO other IDL formats
 
