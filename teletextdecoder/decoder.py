@@ -307,6 +307,8 @@ def decode_teletext_line( bytes ):
                 decoded_data.append([bytes[next], length, 0]) # DL, true length, dummy bytes
                 crcdata.append(bytes[next]) # include in checksum
                 payload_length = bytes[next] # explicit length
+                if payload_length > length:
+                    payload_length = length # handle malformed DL safely
                 same_count = 0 # explicit DL is either not zero or makes count irrelevant
                 next += 1
             else:
