@@ -893,6 +893,9 @@ def main(input, output, page, subpage, idl, headers, datachannel, spa, bsdp, wst
                                     outfile.write(bytes([(rowbytes[i])]))
                                 else:
                                     outfile.write(bytes([(rowbytes[i] | 0x80)]))
+                        elif headers:
+                            if decoded_data[1] == 0:
+                                outfile.write(bytes(rowbytes))
                         else:
                             outfile.write(bytes(rowbytes))
                         
