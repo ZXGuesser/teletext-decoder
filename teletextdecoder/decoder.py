@@ -634,6 +634,7 @@ def display_independent_data_service( decoded_data ):
     
     if datachannel == 4 or datachannel == 12:
         outfile.write("Low bit-rate audio\n")
+        outfile.write("Service Byte 0x{:01x} Control Byte 0x{:02x}\n". format(decoded_data[2][0], decoded_data[3]))
         
     elif (datachannel & 7) == 5 or (datachannel & 7) == 6:
         outfile.write("Datavideo\n")
