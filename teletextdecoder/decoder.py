@@ -304,11 +304,8 @@ def decode_teletext_line( bytes ):
             
             if FT[0] & 8: # data length
                 length = 39-next # true length of user data
-                decoded_data.append([bytes[next], length, 0]) # DL, true length, dummy bytes
+                decoded_data.append([bytes[next] & 0x3f, length, 0]) # DL, true length, dummy bytes
                 crcdata.append(bytes[next]) # include in checksum
-                payload_length = bytes[next] # explicit length
-                if payload_length > length:
-                    payload_length = length # handle malformed DL safely
                 same_count = 0 # explicit DL is either not zero or makes count irrelevant
                 next += 1
             else:
@@ -322,27 +319,30 @@ def decode_teletext_line( bytes ):
                 user_data.append(bytes[next+i])
                 
             payload = bytearray() # only payload
+            dummybytes = []
             
-            for i in range (0, payload_length):
+            for i in range (0, length):
                 if same_count > 7:
                     same_count = 0;
-                    prev_byte = bytes[next+i]
+                    prev_byte = user_data[i]
                     decoded_data[7][2] += 1; # increase dummy byte count
+                    dummybytes.append(True)
                     continue
                 else:
-                    payload.append(bytes[next+i])
+                    payload.append(user_data[+i])
+                    dummybytes.append(False)
                 
-                if bytes[next+i] == 0 or bytes[next+i] == 0xff:
-                    if bytes[next+i] == prev_byte:
+                if user_data[i] == 0 or user_data[i] == 0xff:
+                    if user_data[i] == prev_byte:
                         same_count += 1
                     else:
                         same_count = 1
                 else:
                     same_count = 0
                 
-                prev_byte = bytes[next+i]
+                prev_byte = user_data[i]
                 
-            decoded_data.append((user_data, payload)) # user data and extracted payload
+            decoded_data.append((user_data, payload, dummybytes)) # user data and extracted payload
             
             crc = bytearray([bytes[40],bytes[41]])
             
@@ -684,23 +684,21 @@ def display_independent_data_service( decoded_data ):
             DL = length
         
         user_data = decoded_data[8][0] # data as transmitted
-        payload = decoded_data[8][1] # decoded payload bytes
+        dummybytes = decoded_data[8][2] # dummy byte map
         
         outfile.write("User Data:")
         datastring = ""
         
         prev_byte = decoded_data[6]
-        pbyte = 0
         for i in range (0, length):
-            if pbyte < len(payload) and user_data[i] == payload[pbyte]:
+            if dummybytes[i]: # dummy byte
+                outfile.write(" ⟦{:02x}⟧".format(user_data[i]))
+            else:
                 outfile.write(" {:02x}".format(user_data[i]))
                 if (user_data[i] & 0x7f) > 0x1F and (user_data[i] & 0x7f) < 0x7f:
                     datastring += chr(user_data[i] & 0x7f)
                 else:
                     datastring += "."
-                pbyte += 1
-            else:
-                outfile.write(" ⟦{:02x}⟧".format(user_data[i]))
         
         outfile.write("\n")
         outfile.write("ASCII payload: {}\n".format(datastring))
