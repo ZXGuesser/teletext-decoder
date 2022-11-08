@@ -461,7 +461,7 @@ def display_link_data( decoded_data ):
             l1 = "Red:   "
             l2 = "Green: "
             l3 = "Yellow:"
-            l4 = "Blue:  "
+            l4 = "Cyan:  "
             l6 = "Index: "
         else:
             l1 = "Link 0:"
