@@ -357,8 +357,15 @@ def decode_teletext_line( bytes ):
             # TODO: refactor decoding IDL format B into decode_teletext_line
             FT = hamming_8_4_decode(bytes[2])
             decoded_data.append(FT) # format type
-            for i in range(3,42):
-                decoded_data.append(bytes[i]) # TODO
+            
+            AI = hamming_8_4_decode(bytes[3])
+            decoded_data.append(AI) # application identifier
+            
+            CI = hamming_8_4_decode(bytes[4])
+            decoded_data.append(CI) # continuity indicator
+            
+            for i in range(5,42):
+                decoded_data.append(bytes[i]) # user data and FEC
         
         else:
             # unassigned datachannel or reserved format type
@@ -717,9 +724,9 @@ def display_independent_data_service( decoded_data ):
     elif ((datachannel > 7 and datachannel < 12) or datachannel == 15) and decoded_data[2][0] & 3 == 1: # IDL format B
         # TODO: refactor decoding IDL format B into decode_teletext_line
         outfile.write(" Format B. (error {})\n". format(decoded_data[2][1]))
-        outfile.write("Application number: {}\n".format((decoded_data[2][0] >> 2) & 3))
-        outfile.write("Application identifier: 0x{:x}\n".format(hamming_8_4_decode(decoded_data[3])[0]))
-        outfile.write("Continuity Index (CI): 0x{:x}\n".format(hamming_8_4_decode(decoded_data[4])[0]))
+        outfile.write("Application number: {}       (error {})\n".format((decoded_data[2][0] >> 2) & 3, decoded_data[2][1]))
+        outfile.write("Application identifier: 0x{:x} (error {})\n".format(decoded_data[3][0], decoded_data[3][1]))
+        outfile.write("Continuity Index (CI): 0x{:x}  (error {})\n".format(decoded_data[4][0], decoded_data[4][1]))
         
         outfile.write("User Data:")
         datastring = ""
@@ -733,7 +740,7 @@ def display_independent_data_service( decoded_data ):
         outfile.write("ASCII: {}\n".format(datastring))
         outfile.write("Forward Error Correction bytes (FEC): 0x{:02x} 0x{:02x}\n".format(decoded_data[40], decoded_data[41]))
     else:
-        outfile.write("\nUnknown IDL type\n")
+        outfile.write("\nUnknown IDL type {} (error {})\n". format(decoded_data[2][0] & 3, decoded_data[2][1]))
     outfile.write("\n")
 
 
@@ -746,20 +753,30 @@ def display_independent_data_service( decoded_data ):
 @click.option('-h', '--headers', is_flag=True, help='Only output header packets.')
 @click.option('--datachannel', type=int, help='IDL data channel.', default='-1')
 @click.option('--spa', type=str, help='IDL format A service packet address.', default='-1')
+@click.option('--application', type=str, help='IDL format B application number and id.', default='-1')
 @click.option('--bsdp', is_flag=True, help='Only output Broadcast Service Data Packets.')
 @click.option('--wst', is_flag=True, help='Input file uses 43 byte packet size (for WST TV card dumps.)')
 @click.option('--fix_parity', is_flag=True, help='Fix parity errors in t42 row output.')
-def main(input, output, page, subpage, idl, headers, datachannel, spa, bsdp, wst, fix_parity):
+def main(input, output, page, subpage, idl, headers, datachannel, spa, application, bsdp, wst, fix_parity):
     pageopt = int(page, 16)
     subpageopt = int(subpage, 16)
     offsetstep = 43 if wst else 42
     
     spaopt = int(spa, 16)
+    appopt = int(application, 16)
     
     if spaopt > -1 or datachannel > -1:
         idl = True
     
-    if (pageopt != 0x8FF):
+    if appopt > -1 and datachannel == -1:
+        print("Filtering by IDL format B application requires datachannel")
+        sys.exit(2)
+    
+    if spaopt > -1 and appopt > -1:
+        print("IDL packets cannot be filtered by both SPA and Application at the same time")
+        sys.exit(2)
+    
+    if pageopt != 0x8FF:
         if (pageopt < 0x100 or pageopt > 0x8FF):
             print("invalid page number")
             sys.exit(2)
@@ -767,7 +784,7 @@ def main(input, output, page, subpage, idl, headers, datachannel, spa, bsdp, wst
             print("invalid subpage number")
             sys.exit(2)
         if idl:
-            print("page and idl filtering options cannot be used at the same time")
+            print("Page and IDL filtering options cannot be used at the same time")
             sys.exit(2)
         pagetofind = pageopt & 0xFF
         magazinetofind = (pageopt & 0xF00) >> 8
@@ -952,8 +969,8 @@ def main(input, output, page, subpage, idl, headers, datachannel, spa, bsdp, wst
                     
                     if idl:
                         if dc > 0: # Independent data services
-                            if datachannel == -1 or dc == datachannel: # filter datachannel
-                                if spaopt == -1 or (dc > 7 and dc < 12 and decoded_data[2][0] & 1 == 0 and decoded_data[4][0] == spaopt): # filter on service packet address
+                            if datachannel == -1 or dc == datachannel: # filter data channel
+                                if (spaopt == -1 and appopt == -1) or (dc > 7 and dc < 12 and decoded_data[2][0] & 1 == 0 and decoded_data[4][0] == spaopt) or ((((dc > 7 and dc < 12) or dc == 15) and decoded_data[2][0] & 3 == 1) and (((decoded_data[2][0] << 2) & 0x30) | decoded_data[3][0]) == appopt): # filter service packet address or application
                                     if t42:
                                         outfile.write(bytes(rowbytes))
                                     elif txt:
