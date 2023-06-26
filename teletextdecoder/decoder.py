@@ -537,7 +537,7 @@ def display_link_data( decoded_data ):
             outfile.write (" Subcode flags: {:016b}\n".format((t2[0] >> 2) & 0xFFFF))
         outfile.write("\n")
     else:
-        outfile.write("Designation code {} not implemented/n/n")
+        outfile.write("Designation code {} not implemented\n\n" .format(dc))
 
 def display_broadcast_service_data( decoded_data ):
     outfile.write("Magazine: {}\n" .format(decoded_data[0]))
