@@ -567,17 +567,16 @@ def display_broadcast_service_data( decoded_data ):
         minutes = ((((decoded_data[16] >> 4) & 0xF) - 1) * 10) + ((decoded_data[16] & 0xF) - 1)
         seconds = ((((decoded_data[17] >> 4) & 0xF) - 1) * 10) + ((decoded_data[17] & 0xF) - 1)
         d = date.fromordinal(mjd + date(1858, 11, 17).toordinal())
+        
         outfile.write("Initial Teletext Page: {:03X}/{:04X} (error {})\n".format(imag*0x100+ipage, isub, ierr))
         outfile.write("Network Identification Code: {:04X}\n".format(ni))
+        
         try:
             t = time(hours,minutes,seconds, tzinfo=tz)
             dt = datetime.combine(d,t) + timedelta(minutes=offs)
             outfile.write("Timestamp: {}\n".format(dt.isoformat()))
         except (ValueError):
-            outfile.write("Invalid time/date bytes:")
-            for i in range (11,18):
-                outfile.write (" 0x{:02x}".format(decoded_data[i]))
-            outfile.write("\n")
+            outfile.write("Timestamp: {}T{:02d}:{:02d}:{:02d}+{:02d}:{:02d} (invalid)\n".format(d.isoformat(),hours%100,minutes%100,seconds%100,offs//60,offs%60))
         outfile.write("Reserved Bytes:")
         for i in range (18,22):
             outfile.write (" 0x{:02x}".format(decoded_data[i]))
