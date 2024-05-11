@@ -976,7 +976,7 @@ def main(input, output, page, subpage, idl, headers, datachannel, spa, applicati
                                         display_independent_data_service( decoded_data )
                                     elif bin:
                                         if dc > 7 and dc < 12 and decoded_data[2][0] & 1 == 0: # IDL A
-                                            DL = decoded_data[7][0] # explicit data length
+                                            DL = decoded_data[7][0] - decoded_data[7][2] # explicit data length minus dummy bytes count
                                             if DL == -1:
                                                 DL = decoded_data[7][1] # true remaining data length
                                             payload = decoded_data[8][1] # extracted payload bytes
