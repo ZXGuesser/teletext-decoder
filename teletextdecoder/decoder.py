@@ -657,7 +657,7 @@ def display_independent_data_service( decoded_data ):
         
         if IAL & 7:
             SPA = decoded_data[4]
-            outfile.write("Service Packet Address (SPA): 0x{:x} (error {})\n".format(SPA[0], SPA[1]))
+            outfile.write("Service Packet Address (SPA): 0x{:0{}x} (error {})\n".format(SPA[0], IAL&7, SPA[1]))
         
         if decoded_data[5] > -1:
             outfile.write("Repeat Indicator (RI): 0x{:02x}\n".format(decoded_data[5]))
